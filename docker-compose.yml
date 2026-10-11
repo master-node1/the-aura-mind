@@ -219,7 +219,7 @@ services:
       options: { max-size: "${LOG_MAX_SIZE:-10m}", max-file: "${LOG_MAX_FILE:-3}" }
 
   # ai-service: Python FastAPI worker; subscribes to Redis pub/sub channel
-  # TheAuraLab:ai:process and publishes to TheAuraLab:ai:response.
+  # auramind:ai:process and publishes to auramind:ai:response.
   ai-service:
     build:
       context: ./services/ai-service

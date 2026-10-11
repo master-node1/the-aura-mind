@@ -12,7 +12,7 @@
 | **Swagger** | `/api/chat/docs` (not served when `NODE_ENV=production`) |
 | **Owns tables** | `conversations`, `messages` |
 | **Reads tables** | `users` (raw SQL, owned by auth-service) |
-| **Redis** | publishes `TheAuraLab:ai:process`; subscribes to `TheAuraLab:ai:response` |
+| **Redis** | publishes `auramind:ai:process`; subscribes to `auramind:ai:response` |
 | **Depends on** | PostgreSQL, Redis, ai-service (asynchronously, through Redis) |
 
 ---
@@ -36,8 +36,8 @@ flowchart LR
     GW --> CS[chat-service]
     FE -- "REST /api/chat/*" --> GW
     CS -->|Prisma| PG[(Postgres<br/>conversations, messages,<br/>users read-only)]
-    CS -- "PUBLISH TheAuraLab:ai:process" --> R[(Redis)]
-    R -- "SUBSCRIBE TheAuraLab:ai:response" --> CS
+    CS -- "PUBLISH auramind:ai:process" --> R[(Redis)]
+    R -- "SUBSCRIBE auramind:ai:response" --> CS
     R <--> AI[ai-service]
 ```
 
@@ -68,7 +68,7 @@ src/
 
 | Hook or event | Behavior |
 |---|---|
-| `onModuleInit` | Subscribes to `TheAuraLab:ai:response`. Each message is parsed as JSON and forwarded as a `message` event to every socket of `payload.userId`. Parse errors are logged. |
+| `onModuleInit` | Subscribes to `auramind:ai:response`. Each message is parsed as JSON and forwarded as a `message` event to every socket of `payload.userId`. Parse errors are logged. |
 | `handleConnection` | Reads `handshake.query.token` and verifies it with `JWT_SECRET`, requiring `type === 'access'`. It stores `userId` and `email` in `client.data` and registers the socket. On failure it logs and disconnects. |
 | `handleDisconnect` | Removes the socket, and the user entry once the user has no sockets left. |
 | `message` event | See the [send-message flow](#61-send-a-chat-message-end-to-end). |
@@ -99,14 +99,14 @@ Connect with `io('<gateway>', { path: '/socket.io/', transports: ['websocket'], 
 
 ### 3.4 Redis contract
 
-`TheAuraLab:ai:process` is published by chat-service:
+`auramind:ai:process` is published by chat-service:
 
 ```json
 { "userId": "uuid", "messageId": "client-id", "content": "text", "conversationId": "uuid",
   "username": "jane_d", "personality": "friend" }
 ```
 
-`TheAuraLab:ai:response` is consumed by chat-service. The payload shape is in [ai-service](../ai-service/README.md#4-interfaces).
+`auramind:ai:response` is consumed by chat-service. The payload shape is in [ai-service](../ai-service/README.md#4-interfaces).
 
 ---
 
@@ -186,10 +186,10 @@ sequenceDiagram
     end
     CS->>DB: INSERT messages (role=user)
     CS->>DB: SELECT username, personality_archetype FROM users
-    CS->>R: PUBLISH TheAuraLab:ai:process
+    CS->>R: PUBLISH auramind:ai:process
     R->>AI: message
     AI->>AI: run agent pipeline
-    AI->>R: PUBLISH TheAuraLab:ai:response
+    AI->>R: PUBLISH auramind:ai:response
     R->>CS: message
     CS-->>FE: message {content, emotion, avatarExpression, suggestions, conversationId}
 ```

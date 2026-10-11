@@ -11,7 +11,7 @@ async function bootstrap() {
 
   if (process.env.NODE_ENV !== 'production') {
     const config = new DocumentBuilder()
-      .setTitle('TheAuraLab — Auth Service')
+      .setTitle('AuraMind — Auth Service')
       .setDescription('Handles user registration, login, JWT tokens, and profile retrieval.')
       .setVersion('1.0')
       .addBearerAuth()

@@ -29,14 +29,14 @@ class MemoryService:
     # ── Short-term (Redis) ────────────────────────────────────────────────
     async def save_short_term(self, user_id: str, message: dict) -> None:
         r = await self._get_redis()
-        key = f"TheAuraLab:st:{user_id}"
+        key = f"auramind:st:{user_id}"
         await r.rpush(key, json.dumps(message))
         await r.ltrim(key, -MAX_SHORT, -1)
         await r.expire(key, TTL)
 
     async def get_short_term(self, user_id: str) -> List[dict]:
         r = await self._get_redis()
-        key = f"TheAuraLab:st:{user_id}"
+        key = f"auramind:st:{user_id}"
         raw = await r.lrange(key, 0, -1)
         return [json.loads(item) for item in raw]
 

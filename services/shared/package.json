@@ -1,7 +1,7 @@
 {
-  "name": "@TheAuraLab/shared",
+  "name": "@auramind/shared",
   "version": "1.0.0",
-  "description": "Shared TypeScript types and constants across TheAuraLab microservices",
+  "description": "Shared TypeScript types and constants across AuraMind microservices",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {

@@ -15,7 +15,7 @@
 | **memory-service** | NestJS | 3000 | `/api/memory/*` | `memories`, Redis `st:*` | [memory-service](memory-service/README.md) |
 | **companion-service** | NestJS | 3000 | `/api/companion/*` | – (writes `users` columns) | [companion-service](companion-service/README.md) |
 | **analytics-service** | NestJS | 3000 | `/api/analytics/*` | – (read-only) | [analytics-service](analytics-service/README.md) |
-| **ai-service** | Python / FastAPI | 3000 | `/api/ai/health` only | ChromaDB `TheAuraLab_memories` | [ai-service](ai-service/README.md) |
+| **ai-service** | Python / FastAPI | 3000 | `/api/ai/health` only | ChromaDB `auramind_memories` | [ai-service](ai-service/README.md) |
 | **shared** | TypeScript library | – | – | – | [shared](shared/README.md) |
 
 Every service README has the same sections: **Responsibilities → High-Level Design → Low-Level Design → API → Data model → Flows → Configuration → Run/Build/Test → Known limitations.**
@@ -116,10 +116,10 @@ Column-level details are in each service's README under **§5 Data model**.
 
 | Name | Kind | Producer | Consumer | Payload |
 |---|---|---|---|---|
-| `TheAuraLab:ai:process` | pub/sub channel | chat-service | ai-service | `{userId, messageId, content, conversationId, username, personality}` |
-| `TheAuraLab:ai:response` | pub/sub channel | ai-service | chat-service | `{userId, messageId, content, emotion, avatarExpression, memoryUpdates[], suggestions[], conversationId}` |
-| `TheAuraLab:st:{userId}` | LIST (max 50, TTL 3600 s) | ai-service, memory-service | ai-service, memory-service | `{role, content}` JSON |
-| `TheAuraLab:memory:save`, `TheAuraLab:memory:search` | declared in `shared` | – | – | unused |
+| `auramind:ai:process` | pub/sub channel | chat-service | ai-service | `{userId, messageId, content, conversationId, username, personality}` |
+| `auramind:ai:response` | pub/sub channel | ai-service | chat-service | `{userId, messageId, content, emotion, avatarExpression, memoryUpdates[], suggestions[], conversationId}` |
+| `auramind:st:{userId}` | LIST (max 50, TTL 3600 s) | ai-service, memory-service | ai-service, memory-service | `{role, content}` JSON |
+| `auramind:memory:save`, `auramind:memory:search` | declared in `shared` | – | – | unused |
 
 ### Synchronous HTTP
 
@@ -278,8 +278,8 @@ Severity reflects what someone deploying the stack today would hit first.
 | 6 | 🟡 Low | The refresh token is in a query string, there's one secret for both token types, there's no revocation, no email verification, and the code falls back to a `changeme` secret. | auth (and all JWT verifiers) |
 | 7 | 🟡 Low | The `shared` package is unused and its types have drifted. | shared |
 | 8 | 🟡 Low | Unit tests only in auth-service. No structured logging, metrics, tracing or correlation IDs anywhere. | all |
-| 9 | 🟡 Low | Names still carry the old product: Redis channels `TheAuraLab:*`, package names `@TheAuraLab/*`. No `tenant_id` anywhere yet. | all |
+| 9 | 🟡 Low | No `tenant_id` anywhere yet. | all |
 
-Fixed since the first version of this index: `/health` is public everywhere and checks its databases; nginx starts (the unused `frontend` upstream was removed); Swagger is hidden when `NODE_ENV=production`; the repo is lint-clean.
+Fixed since the first version of this index: `/health` is public everywhere and checks its databases; nginx starts (the unused `frontend` upstream was removed); Swagger is hidden when `NODE_ENV=production`; the repo is lint-clean; Redis channels and keys use the `auramind:` prefix, the ChromaDB collection is `auramind_memories` and packages are `@auramind/*` (renamed from TheAuraLab; existing dev data under the old names is not migrated).
 
 [DEPLOYMENT.md](DEPLOYMENT.md) is older than this index and lists some items that have since changed. For example, companion's `reset-memory` is now implemented.

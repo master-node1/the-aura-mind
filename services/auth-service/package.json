@@ -1,5 +1,5 @@
 {
-  "name": "@TheAuraLab/auth-service",
+  "name": "@auramind/auth-service",
   "version": "1.0.0",
   "scripts": {
     "build": "nest build",
