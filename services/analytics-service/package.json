@@ -1,5 +1,5 @@
 {
-  "name": "@TheAuraLab/analytics-service",
+  "name": "@auramind/analytics-service",
   "version": "1.0.0",
   "scripts": {
     "build": "nest build",

@@ -10,9 +10,10 @@ import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 import { REDIS_PUB, REDIS_SUB } from '../redis/redis.module';
 import { PrismaService } from '../prisma/prisma.service';
+import { DEFAULT_TENANT_ID } from '../conversation/jwt.strategy';
 
-const AI_PROCESS = 'TheAuraLab:ai:process';
-const AI_RESPONSE = 'TheAuraLab:ai:response';
+const AI_PROCESS = 'auramind:ai:process';
+const AI_RESPONSE = 'auramind:ai:response';
 
 @WebSocketGateway({
   cors: { origin: '*', credentials: true },
@@ -64,6 +65,7 @@ export class ChatGateway
 
       client.data.userId = payload.sub;
       client.data.email = payload.email;
+      client.data.tenantId = payload.tid ?? DEFAULT_TENANT_ID;
 
       if (!this.userSockets.has(payload.sub)) {
         this.userSockets.set(payload.sub, new Set());
@@ -106,7 +108,7 @@ export class ChatGateway
     let conversationId = data.conversationId;
     if (!conversationId) {
       const convo = await this.prisma.conversation.create({
-        data: { userId, title: data.content.slice(0, 60) },
+        data: { userId, tenantId: client.data.tenantId, title: data.content.slice(0, 60) },
       });
       conversationId = convo.id;
     }

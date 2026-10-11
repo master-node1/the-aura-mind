@@ -34,7 +34,7 @@ export class MemoryController {
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Create a new long-term memory' })
   create(@Request() req: AuthenticatedRequest, @Body() dto: CreateMemoryDto) {
-    return this.mem.create(req.user.sub, dto);
+    return this.mem.create(req.user.sub, req.user.tenantId, dto);
   }
 
   @Get('export/json')
@@ -46,7 +46,7 @@ export class MemoryController {
       emotion: m.emotionTag, importance: m.importanceScore,
       createdAt: m.createdAt,
     }));
-    res.setHeader('Content-Disposition', 'attachment; filename=TheAuraLab-memories.json');
+    res.setHeader('Content-Disposition', 'attachment; filename=auramind-memories.json');
     res.json({ memories: data, count: data.length });
   }
 

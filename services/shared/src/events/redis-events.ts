@@ -5,12 +5,12 @@
  * AI Service    →  memory.save  →  Memory Service
  */
 export const REDIS_CHANNELS = {
-  AI_PROCESS:    'TheAuraLab:ai:process',
-  AI_RESPONSE:   'TheAuraLab:ai:response',
-  MEMORY_SAVE:   'TheAuraLab:memory:save',
-  MEMORY_SEARCH: 'TheAuraLab:memory:search',
+  AI_PROCESS:    'auramind:ai:process',
+  AI_RESPONSE:   'auramind:ai:response',
+  MEMORY_SAVE:   'auramind:memory:save',
+  MEMORY_SEARCH: 'auramind:memory:search',
 } as const;
 
 export const REDIS_KEYS = {
-  shortTerm: (userId: string) => `TheAuraLab:st:${userId}`,
+  shortTerm: (userId: string) => `auramind:st:${userId}`,
 } as const;

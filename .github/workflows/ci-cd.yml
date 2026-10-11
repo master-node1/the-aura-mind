@@ -250,12 +250,12 @@ jobs:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_USER: theauralab
+          POSTGRES_USER: auramind
           POSTGRES_PASSWORD: ci_only_password
-          POSTGRES_DB: theauralab
+          POSTGRES_DB: auramind
         ports: ["5432:5432"]
         options: >-
-          --health-cmd "pg_isready -U theauralab"
+          --health-cmd "pg_isready -U auramind"
           --health-interval 5s --health-timeout 5s --health-retries 20
       redis:
         image: redis:7-alpine
@@ -268,7 +268,7 @@ jobs:
       SERVICE: ${{ matrix.service }}
       PORT: ${{ matrix.port }}
       HEALTH_PATH: ${{ matrix.health_path }}
-      DATABASE_URL: postgresql://theauralab:ci_only_password@127.0.0.1:5432/theauralab
+      DATABASE_URL: postgresql://auramind:ci_only_password@127.0.0.1:5432/auramind
       REDIS_URL: redis://127.0.0.1:6379
     steps:
       - uses: actions/checkout@v4

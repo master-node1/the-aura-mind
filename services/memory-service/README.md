@@ -11,7 +11,7 @@
 | **Gateway route** | `/api/memory/*` |
 | **Swagger** | `/api/memory/docs` (not served when `NODE_ENV=production`) |
 | **Owns tables** | `memories` |
-| **Redis keys** | `TheAuraLab:st:{userId}` (a list, shared with ai-service) |
+| **Redis keys** | `auramind:st:{userId}` (a list, shared with ai-service) |
 | **Depends on** | PostgreSQL, Redis |
 | **Used by** | Frontend; companion-service (`DELETE /short-term`); analytics-service (reads `memories` directly) |
 
@@ -34,12 +34,12 @@ flowchart LR
     FE[Frontend] -->|/api/memory/*| GW[nginx] --> MS[memory-service]
     COMP[companion-service] -->|DELETE /api/memory/short-term| MS
     MS -->|Prisma| PG[(Postgres: memories)]
-    MS -->|RPUSH / LRANGE / DEL| R[(Redis<br/>TheAuraLab:st:userId)]
+    MS -->|RPUSH / LRANGE / DEL| R[(Redis<br/>auramind:st:userId)]
     AI[ai-service] -->|same Redis key| R
     AN[analytics-service] -. reads memories .-> PG
 ```
 
-The short-term key is a **shared contract** with ai-service, which reads and writes `TheAuraLab:st:{userId}` directly with the same limits (50 entries, 3600-second TTL). Clearing it here resets the AI's conversational context.
+The short-term key is a **shared contract** with ai-service, which reads and writes `auramind:st:{userId}` directly with the same limits (50 entries, 3600-second TTL). Clearing it here resets the AI's conversational context.
 
 ---
 
@@ -99,7 +99,7 @@ All paths are relative to `/api/memory`, and **every route requires** `Authoriza
 |---|---|---|---|---|
 | GET | `/` | `skip` (0), `limit` (50), `memory_type?` | 200 memories | 401 |
 | POST | `/` | `CreateMemoryDto` | 201 memory | 400, 401 |
-| GET | `/export/json` | – | 200 file `TheAuraLab-memories.json`: `{ memories[], count }` | 401 |
+| GET | `/export/json` | – | 200 file `auramind-memories.json`: `{ memories[], count }` | 401 |
 | POST | `/short-term` | `{ role, content }` | 201 (empty body) | 401 |
 | GET | `/short-term` | – | 200 `[{role, content}]` | 401 |
 | DELETE | `/short-term` | – | 204 | 401 |
@@ -121,12 +121,13 @@ Content-Type: application/json
 
 ## 5. Data model
 
-**Table `memories`**: migration `20260722123353_init` creates it, and `20260722125119_init` converts `user_id`, `embedding_id` and `conversation_id` to UUID.
+**Table `memories`**: migration `20260722123353_init` creates it, and `20260722125119_init` converts `user_id`, `embedding_id` and `conversation_id` to UUID. `20261011190200_memories_tenant_id` adds `tenant_id`.
 
 | Column | Type | Constraints / default | Notes |
 |---|---|---|---|
 | `id` | UUID | PK | |
 | `user_id` | UUID | NOT NULL | Logical link to `users.id` |
+| `tenant_id` | TEXT | NOT NULL, default `'default'`, indexed | From the access token's `tid` claim on `POST /`; tokens without `tid` count as `default` |
 | `memory_type` | TEXT | default `'long'` | `short \| long \| semantic` |
 | `content` | TEXT | NOT NULL | |
 | `summary` | TEXT | nullable | |
@@ -144,6 +145,7 @@ erDiagram
     memories {
         uuid id PK
         uuid user_id
+        text tenant_id
         text memory_type
         text content
         text summary
@@ -158,7 +160,7 @@ erDiagram
 
 There's no index on `user_id`, and every query filters on it.
 
-**Redis:** key `TheAuraLab:st:{userId}`, type LIST, values `{"role":"user|assistant","content":"…"}` as JSON. At most 50 entries, and a TTL of 3600 seconds that resets on every write.
+**Redis:** key `auramind:st:{userId}`, type LIST, values `{"role":"user|assistant","content":"…"}` as JSON. At most 50 entries, and a TTL of 3600 seconds that resets on every write.
 
 ---
 
@@ -194,7 +196,7 @@ sequenceDiagram
     participant R as Redis
     FE->>CP: POST /api/companion/reset-memory (Bearer)
     CP->>MS: DELETE /api/memory/short-term (forwards Bearer)
-    MS->>R: DEL TheAuraLab:st:userId
+    MS->>R: DEL auramind:st:userId
     MS-->>CP: 204
     CP-->>FE: 200 {message}
 ```
@@ -230,7 +232,7 @@ npm run start:dev               # http://localhost:3000/api/memory/docs
 ## 9. Known limitations and follow-ups
 
 - **Memories extracted by the AI never reach this table.** ai-service writes them only to ChromaDB, so `memories`, and therefore the analytics dashboards, only contain memories that users create by hand.
-- The `TheAuraLab:memory:save` channel is declared in `services/shared` but nothing publishes or subscribes to it.
+- The `auramind:memory:save` channel is declared in `services/shared` but nothing publishes or subscribes to it.
 - `PATCH /:id` and `POST /short-term` bodies aren't validated.
 - The short-term limits are hard-coded, so changing the environment variables on ai-service alone causes drift between the two services.
 - There's no index on `memories.user_id`, and `accessed_at` and `embedding_id` are never set.

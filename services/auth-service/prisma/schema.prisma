@@ -8,17 +8,23 @@ datasource db {
 }
 
 model User {
-  id                   String   @id @default(uuid()) @db.Uuid
-  email                String   @unique
-  username             String   @unique
-  hashedPassword       String   @map("hashed_password")
-  personalityArchetype String   @default("friend") @map("personality_archetype")
-  avatarConfig         Json     @default("{}") @map("avatar_config")
-  communicationStyle   String   @default("casual") @map("communication_style")
-  isActive             Boolean  @default(true) @map("is_active")
-  isVerified           Boolean  @default(false) @map("is_verified")
-  createdAt            DateTime @default(now()) @map("created_at")
-  updatedAt            DateTime @updatedAt @map("updated_at")
+  id                         String    @id @default(uuid()) @db.Uuid
+  // Host product (tenant) the account belongs to; see TENANT_ID.
+  tenantId                   String    @default("default") @map("tenant_id")
+  email                      String    @unique
+  username                   String    @unique
+  hashedPassword             String    @map("hashed_password")
+  personalityArchetype       String    @default("friend") @map("personality_archetype")
+  avatarConfig               Json      @default("{}") @map("avatar_config")
+  communicationStyle         String    @default("casual") @map("communication_style")
+  isActive                   Boolean   @default(true) @map("is_active")
+  isVerified                 Boolean   @default(false) @map("is_verified")
+  // SHA-256 of the pending email verification token; the raw token is only emailed.
+  emailVerificationTokenHash String?   @unique @map("email_verification_token_hash")
+  emailVerificationExpiresAt DateTime? @map("email_verification_expires_at")
+  createdAt                  DateTime  @default(now()) @map("created_at")
+  updatedAt                  DateTime  @updatedAt @map("updated_at")
 
+  @@index([tenantId])
   @@map("users")
 }

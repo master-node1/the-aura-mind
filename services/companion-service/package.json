@@ -1,5 +1,5 @@
 {
-  "name": "@TheAuraLab/companion-service",
+  "name": "@auramind/companion-service",
   "version": "1.0.0",
   "scripts": {
     "build": "nest build",

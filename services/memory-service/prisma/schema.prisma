@@ -10,6 +10,7 @@ datasource db {
 model Memory {
   id              String    @id @default(uuid()) @db.Uuid
   userId          String    @map("user_id") @db.Uuid
+  tenantId        String    @default("default") @map("tenant_id")
   memoryType      String    @default("long") @map("memory_type")
   content         String
   summary         String?
@@ -20,5 +21,6 @@ model Memory {
   createdAt       DateTime  @default(now()) @map("created_at")
   accessedAt      DateTime? @map("accessed_at")
 
+  @@index([tenantId])
   @@map("memories")
 }

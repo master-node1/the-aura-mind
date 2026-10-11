@@ -19,7 +19,7 @@ export class ConversationController {
   @Post('conversations')
   @HttpCode(HttpStatus.CREATED)
   create(@Request() req: AuthenticatedRequest, @Body('title') title?: string) {
-    return this.conv.create(req.user.sub, title);
+    return this.conv.create(req.user.sub, req.user.tenantId, title);
   }
 
   @Get('conversations/:id')

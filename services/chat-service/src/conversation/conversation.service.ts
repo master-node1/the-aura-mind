@@ -17,8 +17,8 @@ export class ConversationService {
     });
   }
 
-  create(userId: string, title?: string) {
-    return this.prisma.conversation.create({ data: { userId, title } });
+  create(userId: string, tenantId: string, title?: string) {
+    return this.prisma.conversation.create({ data: { userId, tenantId, title } });
   }
 
   async findOne(id: string, userId: string) {

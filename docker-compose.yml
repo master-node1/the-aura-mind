@@ -15,7 +15,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-auramind}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-auramind_dev_pw}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
       POSTGRES_DB: ${POSTGRES_DB:-auramind}
       POSTGRES_INITDB_ARGS: "--encoding=UTF8"
     volumes: [postgres-data:/var/lib/postgresql/data]
@@ -74,12 +74,17 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: ${NODE_ENV:-production}
+      TENANT_ID: ${TENANT_ID:-}
       PORT: "3000"
-      DATABASE_URL: postgresql://${POSTGRES_USER:-auramind}:${POSTGRES_PASSWORD:-auramind_dev_pw}@host.docker.internal:5432/${POSTGRES_DB:-auramind}
-      JWT_SECRET: ${SECRET_KEY:-change-me}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-auramind}:${POSTGRES_PASSWORD}@host.docker.internal:5432/${POSTGRES_DB:-auramind}
+      JWT_SECRET: ${SECRET_KEY:?}
       REDIS_URL: redis://redis:6379
+      SMTP_URL: ${SMTP_URL:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      EMAIL_VERIFICATION_URL: ${EMAIL_VERIFICATION_URL:-}
+      REQUIRE_EMAIL_VERIFICATION: ${REQUIRE_EMAIL_VERIFICATION:-false}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-change-me-too}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-}
     networks:
       - backend
     depends_on:
@@ -106,8 +111,8 @@ services:
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       PORT: "3000"
-      DATABASE_URL: postgresql://${POSTGRES_USER:-auramind}:${POSTGRES_PASSWORD:-auramind_dev_pw}@host.docker.internal:5432/${POSTGRES_DB:-auramind}
-      JWT_SECRET: ${SECRET_KEY:-change-me}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-auramind}:${POSTGRES_PASSWORD}@host.docker.internal:5432/${POSTGRES_DB:-auramind}
+      JWT_SECRET: ${SECRET_KEY:?}
       REDIS_URL: redis://redis:6379
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
     networks:
@@ -137,8 +142,8 @@ services:
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       PORT: "3000"
-      DATABASE_URL: postgresql://${POSTGRES_USER:-auramind}:${POSTGRES_PASSWORD:-auramind_dev_pw}@host.docker.internal:5432/${POSTGRES_DB:-auramind}
-      JWT_SECRET: ${SECRET_KEY:-change-me}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-auramind}:${POSTGRES_PASSWORD}@host.docker.internal:5432/${POSTGRES_DB:-auramind}
+      JWT_SECRET: ${SECRET_KEY:?}
       REDIS_URL: redis://redis:6379
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
     networks:
@@ -168,8 +173,8 @@ services:
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       PORT: "3000"
-      DATABASE_URL: postgresql://${POSTGRES_USER:-auramind}:${POSTGRES_PASSWORD:-auramind_dev_pw}@host.docker.internal:5432/${POSTGRES_DB:-auramind}
-      JWT_SECRET: ${SECRET_KEY:-change-me}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-auramind}:${POSTGRES_PASSWORD}@host.docker.internal:5432/${POSTGRES_DB:-auramind}
+      JWT_SECRET: ${SECRET_KEY:?}
       REDIS_URL: redis://redis:6379
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
     networks:
@@ -198,8 +203,8 @@ services:
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       PORT: "3000"
-      DATABASE_URL: postgresql://${POSTGRES_USER:-auramind}:${POSTGRES_PASSWORD:-auramind_dev_pw}@host.docker.internal:5432/${POSTGRES_DB:-auramind}
-      JWT_SECRET: ${SECRET_KEY:-change-me}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-auramind}:${POSTGRES_PASSWORD}@host.docker.internal:5432/${POSTGRES_DB:-auramind}
+      JWT_SECRET: ${SECRET_KEY:?}
       REDIS_URL: redis://redis:6379
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
     networks:
@@ -219,7 +224,7 @@ services:
       options: { max-size: "${LOG_MAX_SIZE:-10m}", max-file: "${LOG_MAX_FILE:-3}" }
 
   # ai-service: Python FastAPI worker; subscribes to Redis pub/sub channel
-  # TheAuraLab:ai:process and publishes to TheAuraLab:ai:response.
+  # auramind:ai:process and publishes to auramind:ai:response.
   ai-service:
     build:
       context: ./services/ai-service
