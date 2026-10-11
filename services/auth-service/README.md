@@ -24,7 +24,9 @@
 - Return the current user's profile.
 - Own the `users` table. `companion-service` and `analytics-service` also read it, and `companion-service` writes to it (see [Data model](#5-data-model)).
 
-Out of scope today: email verification, token revocation, password reset, social login, and accepting host-product tokens. This service was copied from theauralab's auth-service when AuraMind moved to its own repository, with the theauralab identity-service link removed, so AuraMind has its own login and no dependency on theauralab. The planned model is three modes at once: AuraMind's own accounts, login with a host product's own tokens (verified through that product's JWKS), and per-tenant keys for server-to-server calls.
+- Verify email addresses: signup emails a one-time link, `POST /verify-email` sets `is_verified`, and `REQUIRE_EMAIL_VERIFICATION=true` makes login and refresh refuse unverified accounts.
+
+Out of scope today: token revocation, password reset, social login, and accepting host-product tokens. This service was copied from theauralab's auth-service when AuraMind moved to its own repository, with the theauralab identity-service link removed, so AuraMind has its own login and no dependency on theauralab. The planned model is three modes at once: AuraMind's own accounts, login with a host product's own tokens (verified through that product's JWKS), and per-tenant keys for server-to-server calls.
 
 ---
 
@@ -53,6 +55,7 @@ src/
 ├── main.ts                 # bootstrap: prefix api/auth, ValidationPipe, CORS, Swagger
 ├── app.module.ts           # ConfigModule (global), PrismaModule, AuthModule, HealthController
 ├── health/health.controller.ts # public; SELECT 1 with a 2 s timeout, 503 when down
+├── mail/mail.service.ts    # sends the verification email over SMTP_URL (logs the link when unset, outside production)
 ├── prisma/
 │   ├── prisma.module.ts    # @Global, exports PrismaService
 │   └── prisma.service.ts   # PrismaClient with connect/disconnect lifecycle hooks
@@ -63,7 +66,8 @@ src/
     ├── jwt.strategy.ts     # Passport 'jwt' strategy; rejects non-access tokens
     └── dto/
         ├── register.dto.ts
-        └── login.dto.ts
+        ├── login.dto.ts
+        └── verify-email.dto.ts
 ```
 
 ### 3.1 Components
@@ -71,7 +75,8 @@ src/
 | Class | Responsibility |
 |---|---|
 | `AuthController` | Maps HTTP routes to `AuthService`. `GET /me` is protected by `AuthGuard('jwt')`. |
-| `AuthService` | `register`, `login`, `refresh`, `getMe`, plus the private helpers `generateTokens` and `sanitizeUser`. |
+| `AuthService` | `register`, `login`, `refresh`, `verifyEmail`, `resendVerification`, `getMe`, plus private helpers such as `generateTokens` and `sanitizeUser`. |
+| `MailService` | Sends the verification email through nodemailer when `SMTP_URL` is set; otherwise logs the link (non-production) or a warning (production). |
 | `JwtStrategy` | Pulls the Bearer token from the request, verifies it with `JWT_SECRET`, requires `payload.type === 'access'`, and returns `{ sub, email }` as `req.user`. |
 | `PrismaService` | Shared Prisma client. |
 
@@ -123,8 +128,10 @@ All paths are relative to `/api/auth`.
 | Method | Path | Auth | Description | Success | Errors |
 |---|---|---|---|---|---|
 | POST | `/register` | – | Create the user | 201 user (without password) | 400, 409 |
-| POST | `/login` | – | Log in and get tokens | 200 token pair | 400, 401 |
-| POST | `/refresh?refresh_token=<jwt>` | – | Exchange a refresh token for a new pair | 200 token pair | 401 |
+| POST | `/login` | – | Log in and get tokens | 200 token pair | 400, 401, 403 when verification is required and the email isn't verified |
+| POST | `/verify-email` | – | Body `{ token }` from the email link; marks the email verified | 200 `{ message }` | 400 (invalid or expired token) |
+| POST | `/resend-verification` | – | Body `{ email }`; issues a new link if the account is active and unverified | 200 `{ message }`, the same whether or not the account exists | 400 |
+| POST | `/refresh?refresh_token=<jwt>` | – | Exchange a refresh token for a new pair | 200 token pair | 401, 403 as for `/login` |
 | GET | `/me` | Bearer (access) | Current user profile | 200 user | 401, 404 |
 | POST | `/logout` | Bearer (access) | Acknowledge logout; tokens aren't revoked | 200 `{ message }` | 401 |
 | GET | `/health` | – | Checks database connectivity (`SELECT 1`, 2 s timeout) | 200 `{ status: 'ok', service, checks: { database: 'up' } }`; 503 with the failed check marked `down` | – |
@@ -162,7 +169,7 @@ Content-Type: application/json
 
 ## 5. Data model
 
-**Table `users`**, created by migration `20260722124750_init`.
+**Table `users`**, created by migration `20260722124750_init`; the email verification columns come from `20261011180000_email_verification`.
 
 | Column | Type | Constraints / default | Notes |
 |---|---|---|---|
@@ -174,7 +181,9 @@ Content-Type: application/json
 | `avatar_config` | JSONB | NOT NULL, default `'{}'` | Updated by companion-service |
 | `communication_style` | TEXT | NOT NULL, default `'casual'` | Updated by companion-service |
 | `is_active` | BOOLEAN | NOT NULL, default `true` | Inactive users can't log in |
-| `is_verified` | BOOLEAN | NOT NULL, default `false` | Nothing sets it yet |
+| `is_verified` | BOOLEAN | NOT NULL, default `false` | Set by `POST /verify-email` |
+| `email_verification_token_hash` | TEXT | UNIQUE, nullable | SHA-256 of the pending link token; the raw token is only emailed. Cleared on verification |
+| `email_verification_expires_at` | TIMESTAMP(3) | nullable | Link expiry (`EMAIL_VERIFICATION_TTL_HOURS`) |
 | `created_at` | TIMESTAMP(3) | NOT NULL, default now | |
 | `updated_at` | TIMESTAMP(3) | NOT NULL | Prisma `@updatedAt` |
 
@@ -190,6 +199,8 @@ erDiagram
         text communication_style
         bool is_active
         bool is_verified
+        text email_verification_token_hash UK
+        timestamp email_verification_expires_at
         timestamp created_at
         timestamp updated_at
     }
@@ -215,13 +226,18 @@ sequenceDiagram
     alt email or username exists
         A-->>C: 409 Conflict
     else
-        A->>A: bcrypt.hash(password, 12)
-        A->>DB: INSERT users
+        A->>A: bcrypt.hash(password, 12), random token
+        A->>DB: INSERT users (with token hash and expiry)
+        A->>A: email link ?token=… (failures are logged, not returned)
         A-->>C: 201 user (no hash)
     end
+    C->>A: POST /verify-email {token}
+    A->>DB: findUnique(token hash), check expiry
+    A->>DB: UPDATE is_verified = true, clear token
+    A-->>C: 200
     C->>A: POST /login {email, password}
     A->>DB: findUnique(email)
-    A->>A: bcrypt.compare, check isActive
+    A->>A: bcrypt.compare, check isActive (and isVerified when required)
     A-->>C: 200 {access_token, refresh_token}
 ```
 
@@ -255,7 +271,12 @@ sequenceDiagram
 | `JWT_ACCESS_EXPIRE_MINUTES` | no | `30` | Access token lifetime |
 | `JWT_REFRESH_EXPIRE_DAYS` | no | `7` | Refresh token lifetime |
 | `CORS_ORIGINS` | no | `http://localhost:3000` | Comma-separated list of allowed origins |
-| `NODE_ENV` | no | – | `production` hides Swagger |
+| `NODE_ENV` | no | – | `production` hides Swagger and stops verification links from being logged |
+| `SMTP_URL` | no | – | nodemailer SMTP URL, e.g. `smtps://user:pass@smtp.example.com`. Unset: no email is sent |
+| `MAIL_FROM` | no | `AuraMind <no-reply@localhost>` | Sender of verification emails |
+| `EMAIL_VERIFICATION_URL` | no | `http://localhost:3000/verify-email` | Page the link opens; `?token=` is appended. The page should `POST /api/auth/verify-email` with the token |
+| `EMAIL_VERIFICATION_TTL_HOURS` | no | `24` | Link lifetime |
+| `REQUIRE_EMAIL_VERIFICATION` | no | `false` | `true` makes `/login` and `/refresh` return 403 for unverified accounts |
 | `JWT_REFRESH_SECRET` | – | – | Passed in by compose but **not read by the code** |
 | `REDIS_URL` | – | – | Passed in by compose but **not used** |
 
@@ -274,7 +295,7 @@ npm run build && npm start       # production build
 
 With Docker: `docker compose up -d --build auth-service`.
 
-**Tests:** `npm test` runs 17 Jest unit tests in `test/`, which are kept out of `src/` so production builds don't include them. They cover signup (hashing, 409 on duplicates and races), login (unknown email and wrong password give the same 401, deactivated accounts), refresh validation and `/me`.
+**Tests:** `npm test` runs 31 Jest unit tests in `test/`, which are kept out of `src/` so production builds don't include them. They cover signup (hashing, 409 on duplicates and races), login (unknown email and wrong password give the same 401, deactivated accounts), refresh validation, email verification (token hashing, expiry, resend without account enumeration, the `REQUIRE_EMAIL_VERIFICATION` switch) and `/me`.
 
 Lint runs from the repository root with `npm run lint`.
 
@@ -289,5 +310,6 @@ Lint runs from the repository root with `npm run lint`.
 - The `changeme` fallback secret in code means a misconfigured deployment silently signs tokens with a known secret.
 - Logging uses `console.log` and is not structured.
 - There are no integration or e2e tests.
-- There is no email verification: `is_verified` is never set and login doesn't check it.
+- Verification is off by default (`REQUIRE_EMAIL_VERIFICATION=false`), so existing deployments keep letting unverified users in. Accounts created before this change have no token; they can ask for one with `/resend-verification`.
+- `/resend-verification` has no rate limit, so it can be used to send repeated emails to an address.
 - The companion columns (`personality_archetype`, `avatar_config`, `communication_style`) belong in AuraMind's per-tenant assistant settings,, not on `users`.

@@ -275,7 +275,7 @@ Severity reflects what someone deploying the stack today would hit first.
 | 3 | 🟠 Medium | Chat sockets don't check that the user owns the `conversationId` they send. | chat |
 | 4 | 🟠 Medium | Redis pub/sub isn't durable, and neither chat-service nor ai-service can scale horizontally. | chat, ai |
 | 5 | 🟠 Medium | Shared database with cross-service table access (`users` is written by two services). | auth, companion, chat, analytics |
-| 6 | 🟡 Low | The refresh token is in a query string, there's one secret for both token types, there's no revocation, no email verification, and the code falls back to a `changeme` secret. | auth (and all JWT verifiers) |
+| 6 | 🟡 Low | The refresh token is in a query string, there's one secret for both token types, there's no revocation, email verification is off unless `REQUIRE_EMAIL_VERIFICATION=true`, and the code falls back to a `changeme` secret. | auth (and all JWT verifiers) |
 | 7 | 🟡 Low | The `shared` package is unused and its types have drifted. | shared |
 | 8 | 🟡 Low | Unit tests only in auth-service. No structured logging, metrics, tracing or correlation IDs anywhere. | all |
 | 9 | 🟡 Low | Names still carry the old product: Redis channels `TheAuraLab:*`, package names `@TheAuraLab/*`. No `tenant_id` anywhere yet. | all |

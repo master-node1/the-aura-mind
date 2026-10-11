@@ -4,6 +4,7 @@ import { ApiTags, ApiBearerAuth, ApiOperation, ApiResponse } from '@nestjs/swagg
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { ResendVerificationDto, VerifyEmailDto } from './dto/verify-email.dto';
 import type { AuthenticatedRequest } from './jwt.strategy';
 
 @ApiTags('auth')
@@ -25,8 +26,25 @@ export class AuthController {
   @ApiOperation({ summary: 'Login and receive JWT tokens' })
   @ApiResponse({ status: 200, description: 'Returns access_token and refresh_token' })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
+  @ApiResponse({ status: 403, description: 'Email not verified (only when REQUIRE_EMAIL_VERIFICATION=true)' })
   login(@Body() dto: LoginDto) {
     return this.auth.login(dto);
+  }
+
+  @Post('verify-email')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Verify an email address with the token from the verification email' })
+  @ApiResponse({ status: 200, description: 'Email verified' })
+  @ApiResponse({ status: 400, description: 'Invalid or expired token' })
+  verifyEmail(@Body() dto: VerifyEmailDto) {
+    return this.auth.verifyEmail(dto.token);
+  }
+
+  @Post('resend-verification')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Send a new verification email (same response whether or not the account exists)' })
+  resendVerification(@Body() dto: ResendVerificationDto) {
+    return this.auth.resendVerification(dto.email);
   }
 
   @Post('refresh')
