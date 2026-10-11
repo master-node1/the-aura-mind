@@ -7,7 +7,7 @@ nameOverride: ""
 environment: dev
 
 image:
-  repository: ""   # required, e.g. <account>.dkr.ecr.<region>.amazonaws.com/the-aura-lab/auth-service
+  repository: ""   # required, e.g. <account>.dkr.ecr.<region>.amazonaws.com/the-aura-mind/chat-service
   tag: ""          # required, the git SHA built by CI
   pullPolicy: IfNotPresent
 

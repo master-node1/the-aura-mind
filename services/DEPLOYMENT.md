@@ -1,4 +1,6 @@
-# TheAuraLab Microservices — Deployment Guide
+# AuraMind Microservices — Deployment Guide
+
+> Split out of [the-aura-lab](https://github.com/master-node1/the-aura-lab); theauralab's e-commerce services (identity, customer, authorization) are not part of this stack.
 
 ## ✅ Migration Status
 
@@ -45,7 +47,6 @@ This starts:
 - memory-service:3000
 - companion-service:3000
 - analytics-service:3000
-- customer-service:3000
 - ai-service:3000
 - api-gateway:8001 (nginx)
 - frontend:3000
@@ -60,14 +61,12 @@ Wait for "Auth service running on port 3000".
 ### Step 3: Access
 - Frontend: http://localhost:3000
 - API Gateway: http://localhost:8001
-- Customer API: http://localhost:8001/api/customer
 - Health checks:
   - http://localhost:8001/api/auth/health
   - http://localhost:8001/api/chat/health
   - http://localhost:8001/api/memory/health
   - http://localhost:8001/api/companion/health
   - http://localhost:8001/api/analytics/health
-  - http://localhost:8001/api/customer/health
   - http://localhost:8001/api/ai/health
 
 ---
@@ -128,7 +127,7 @@ nginx API Gateway (:8001)
 - Test Socket.IO directly (bypassing nginx): http://localhost:3000/socket.io/
 
 **AI service not responding**
-- Check Redis pub/sub: `docker exec -it TheAuraLab-redis redis-cli PUBSUB CHANNELS`
+- Check Redis pub/sub: `docker exec -it the-aura-mind-redis redis-cli PUBSUB CHANNELS`
 - Should see `TheAuraLab:ai:process` and `TheAuraLab:ai:response`
 - Check AI service logs: `docker-compose logs -f ai-service`
 

@@ -1,4 +1,4 @@
-# TheAuraLab services: architecture and service index
+# AuraMind services: architecture and service index
 
 > The starting point for the backend. It covers the platform-wide architecture (HLD), the shared database, inter-service contracts and cross-cutting issues, and links to every service's README (LLD, API, DB, flows).
 > [← Repository README](../README.md) · [Deployment guide](DEPLOYMENT.md)
@@ -16,9 +16,6 @@
 | **companion-service** | NestJS | 3000 | `/api/companion/*` | – (writes `users` columns) | [companion-service](companion-service/README.md) |
 | **analytics-service** | NestJS | 3000 | `/api/analytics/*` | – (read-only) | [analytics-service](analytics-service/README.md) |
 | **ai-service** | Python / FastAPI | 3000 | `/api/ai/health` only | ChromaDB `TheAuraLab_memories` | [ai-service](ai-service/README.md) |
-| **customer-service** | NestJS | 3000 | `/api/customer/*` | `customers`, `customer_*` | [customer-service](customer-service/README.md) |
-| **identity-service** | NestJS | 3001 | `/api/identity/*` (`/internal/*` blocked) | `identities`, `identity_*` | [identity-service](identity-service/README.md) |
-| **authorization-service** | NestJS | 3002 | – (internal only, `x-internal-token`) | `roles`, `permissions`, `role_permissions`, `user_roles`, `policies`, `authorization_audit_logs` | [authorization-service](authorization-service/README.md) |
 | **shared** | TypeScript library | – | – | – | [shared](shared/README.md) |
 
 Every service README has the same sections: **Responsibilities → High-Level Design → Low-Level Design → API → Data model → Flows → Configuration → Run/Build/Test → Known limitations.**
@@ -29,24 +26,20 @@ Every service README has the same sections: **Responsibilities → High-Level De
 |---|---|
 | Understand login and tokens | [auth-service §3.3](auth-service/README.md#33-business-rules) |
 | Integrate the chat WebSocket | [chat-service §3.3](chat-service/README.md#33-websocket-protocol) |
-| Verify an email or mobile number | [identity-service §2](identity-service/README.md#2-high-level-design) |
 | Know which endpoints need a JWT | [Request authentication](#request-authentication-across-services) |
-| Make someone an admin | [authorization-service §6](authorization-service/README.md#bootstrapping-the-first-admin) |
 | See how an AI reply is produced | [ai-service §3.1](ai-service/README.md#31-pipeline-steps-pipelinerun_pipeline) |
 | Find every table | [Shared database](#shared-database) |
 | See the Redis channels and keys | [Inter-service communication](#inter-service-communication) |
 | See the environment variables | [Configuration](#configuration) |
 | Know what's broken or missing | [Cross-cutting known issues](#cross-cutting-known-issues) |
-| Read the business requirements (e-commerce PRD) | [docs/README.md](../docs/README.md) |
 
 ---
 
 ## Platform overview
 
-The repository contains two product areas that share the same infrastructure:
+AuraMind (formerly "Sora") is a product-agnostic AI chat agent: auth, chat, memory, companion, analytics and ai-service. Users chat in real time with an AI that detects emotion and remembers facts about them. Today the code is still the original companion chatbot; the target is customer support chat, call emotion analysis and admin help for any host product (theauralab first).
 
-1. **AI companion ("Sora")**: auth, chat, memory, companion, analytics and ai-service. Users chat in real time with a personality-driven AI that detects emotion and remembers facts about them.
-2. **E-commerce foundation**: customer, identity and authorization services, the first services of the enterprise e-commerce platform described in [`docs/`](../docs/README.md).
+This repository was split out of [master-node1/the-aura-lab](https://github.com/master-node1/the-aura-lab), which keeps the e-commerce services (identity, customer, authorization and theauralab's own auth). AuraMind shares no database, user table or signing secret with it.
 
 ### System context
 
@@ -54,7 +47,7 @@ The repository contains two product areas that share the same infrastructure:
 flowchart TB
     U([User / Browser]) -->|HTTPS + WSS :8001| GW[api-gateway<br/>nginx]
 
-    subgraph Companion[AI companion domain]
+    subgraph Companion[AuraMind]
         AUTH[auth-service]
         CHAT[chat-service<br/>Socket.IO]
         MEM[memory-service]
@@ -63,13 +56,7 @@ flowchart TB
         AI[ai-service<br/>Python agents]
     end
 
-    subgraph Commerce[E-commerce domain]
-        CUST[customer-service]
-        ID[identity-service]
-        AZ[authorization-service]
-    end
-
-    GW --> AUTH & CHAT & MEM & COMP & AN & CUST & ID
+    GW --> AUTH & CHAT & MEM & COMP & AN
     GW -->|/api/ai/health| AI
 
     CHAT <-->|pub/sub| REDIS[(Redis 7)]
@@ -79,7 +66,7 @@ flowchart TB
     AI -->|LLM| OPENAI[(OpenAI API)]
     COMP -->|HTTP DELETE short-term| MEM
 
-    AUTH & CHAT & MEM & COMP & AN & CUST & ID & AZ --> PG[(PostgreSQL 16<br/>single shared DB)]
+    AUTH & CHAT & MEM & COMP & AN --> PG[(PostgreSQL 16<br/>single shared DB)]
 ```
 
 ### Architecture style and key decisions
@@ -88,10 +75,8 @@ flowchart TB
 |---|---|---|
 | Service style | NestJS microservices plus one Python worker, each with its own Docker image | Services deploy independently, but every one repeats the same scaffolding |
 | Database | **One shared Postgres database.** Each service owns its tables, but analytics, companion and chat read other services' tables directly | Simple to run, but the schemas are tightly coupled (see [Shared database](#shared-database)) |
-| Authentication | Stateless HS256 JWT with a shared `JWT_SECRET`, verified locally by each service. Every public endpoint needs an access JWT except signup, login, refresh, health, and identity verification (which uses one-time codes). | auth-service isn't called on every request, but tokens can't be revoked and rotating the secret means redeploying every service |
-| Service-to-service | auth-service → identity-service `/internal/*`, and identity/customer → authorization-service, all with the shared `INTERNAL_SERVICE_TOKEN` header. Neither target is reachable through the gateway. | Calls made before the user has a token (signup, login) don't need a user JWT |
-| Authorization | Owner-or-permission: owners act on their own identity and customer records; anyone else needs an RBAC permission from authorization-service. Fails closed (503) when authorization-service can't answer. | One extra HTTP call per non-owner request; no caching yet |
-| User identity | One ID everywhere: `users.id` = `identities.id` = JWT `sub` = `customers.identity_id` | Ownership checks need no lookups |
+| Authentication | Stateless HS256 JWT with a shared `JWT_SECRET`, verified locally by each service. Every public endpoint needs an access JWT except signup, login, refresh and health. | auth-service isn't called on every request, but tokens can't be revoked and rotating the secret means redeploying every service |
+| User identity | `users.id` is the JWT `sub` and the `user_id` on conversations and memories | No lookups needed to scope data to a user |
 | Async messaging | Redis pub/sub between chat-service and ai-service | Low latency, but **at-most-once delivery**: messages are lost while ai-service is down |
 | Vector memory | ChromaDB, used only by ai-service | Relevant memories are retrieved semantically, but separately from Postgres `memories` |
 | Edge | nginx path-based routing | No authentication, rate limiting or TLS at the edge |
@@ -101,16 +86,13 @@ flowchart TB
 
 ## Shared database
 
-Every service connects to the same database (`DATABASE_URL` → `postgres:5432/theauralab`, reached through `host.docker.internal`). The table below lists each table's owner and the other services that access it.
+Every service connects to the same database (`DATABASE_URL` → `postgres:5432/auramind`, reached through `host.docker.internal`). The table below lists each table's owner and the other services that access it.
 
 | Table | Owner (migrations) | Also read by | Also written by |
 |---|---|---|---|
 | `users` | auth-service | chat-service (raw SQL), analytics-service, companion-service | companion-service |
 | `conversations`, `messages` | chat-service | analytics-service | – |
 | `memories` | memory-service | analytics-service | – |
-| `identities`, `identity_providers`, `identity_audit_logs`, `identity_verifications` | identity-service | – | – |
-| `roles`, `permissions`, `role_permissions`, `user_roles`, `policies`, `authorization_audit_logs` | authorization-service (seeds `admin` and the permission catalog) | – | – |
-| `customers`, `customer_addresses`, `customer_preferences`, `customer_audit_logs`, `customer_events` | customer-service | – | – |
 
 ### Logical ER diagram (whole platform)
 
@@ -122,24 +104,7 @@ erDiagram
     users ||--o{ memories : "logical user_id"
     conversations ||--o{ messages : "FK cascade"
     conversations ||--o{ memories : "logical conversation_id"
-
-    identities ||--o{ identity_providers : FK
-    identities ||--o{ identity_audit_logs : FK
-    identities ||--o{ identity_verifications : FK
-    identities ||--o{ user_roles : "logical identity_id"
-    identities ||--o| customers : "logical identity_id"
-
-    roles ||--o{ role_permissions : "FK cascade"
-    permissions ||--o{ role_permissions : "FK cascade"
-    roles ||--o{ user_roles : "FK cascade"
-
-    customers ||--o{ customer_addresses : "FK cascade"
-    customers ||--o| customer_preferences : "FK cascade"
-    customers ||--o{ customer_audit_logs : "FK cascade"
-    customers ||--o{ customer_events : "FK cascade"
 ```
-
-`users` (the companion domain) and `identities` (the e-commerce domain) are **two separate user stores** with nothing linking them.
 
 Column-level details are in each service's README under **§5 Data model**.
 
@@ -161,8 +126,6 @@ Column-level details are in each service's README under **§5 Data model**.
 | From | To | Call |
 |---|---|---|
 | companion-service | memory-service | `DELETE /api/memory/short-term`, forwarding the user's Bearer token |
-| auth-service | identity-service | `POST /api/identity/internal/identities` and `…/:id/verifications` at register; `GET …/:id` at login and refresh (`x-internal-token`, 3 s timeout) |
-| identity-service, customer-service | authorization-service | `POST /api/authorization/authorize` for every non-owner request (`x-internal-token`, 2 s timeout, fails closed) |
 
 No other service-to-service HTTP calls exist. ai-service declares `MEMORY_SERVICE_URL` but never uses it.
 
@@ -214,13 +177,8 @@ flowchart LR
     T --> CP[companion-service ✔]
     T --> AN[analytics-service ✔]
     T --> AU["auth-service /me, /logout ✔"]
-    T --> CU["customer-service ✔ + owner or customer:*"]
-    T --> ID["identity-service /identities/* ✔ + owner or identity:*"]
     P[Public, no JWT] --> PA["auth /register, /login, /refresh"]
-    P --> PV["identity /verify-email, /verify-mobile,<br/>/verifications/resend (one-time code)"]
     P --> PH["every /health"]
-    K[x-internal-token<br/>backend network only] --> IN["identity /internal/*"]
-    K --> AZ["authorization-service (all but /health)"]
 ```
 
 ---
@@ -229,12 +187,12 @@ flowchart LR
 
 | Container | Image | Host port | Health check |
 |---|---|---|---|
-| `the-aura-lab-postgres` | postgres:16-alpine | `${POSTGRES_PORT:-5432}` | `pg_isready` |
-| `the-aura-lab-redis` | redis:7-alpine (AOF on, `allkeys-lru`) | `${REDIS_PORT:-6379}` | `redis-cli ping` |
-| `the-aura-lab-chromadb` | chromadb/chroma:0.4.22 (persistent) | `${CHROMA_PORT:-8000}` | `/api/v1/heartbeat` |
-| `the-aura-lab-<name>-service` | built from `services/<name>` | – (internal only) | `wget /api/<name>/health` |
-| `the-aura-lab-ai` | built from `services/ai-service` | – | `wget /health` |
-| `the-aura-lab-gateway` | built from `services/api-gateway` | `${API_GATEWAY_PORT:-8001}` | `wget /health` |
+| `the-aura-mind-postgres` | postgres:16-alpine | `${POSTGRES_PORT:-5432}` | `pg_isready` |
+| `the-aura-mind-redis` | redis:7-alpine (AOF on, `allkeys-lru`) | `${REDIS_PORT:-6379}` | `redis-cli ping` |
+| `the-aura-mind-chromadb` | chromadb/chroma:0.4.22 (persistent) | `${CHROMA_PORT:-8000}` | `/api/v1/heartbeat` |
+| `the-aura-mind-<name>-service` | built from `services/<name>` | – (internal only) | `wget /api/<name>/health` |
+| `the-aura-mind-ai` | built from `services/ai-service` | – | `wget /health` |
+| `the-aura-mind-gateway` | built from `services/api-gateway` | `${API_GATEWAY_PORT:-8001}` | `wget /health` |
 
 Networks: `backend` (all services and the data stores) and `edge` (the gateway only). Volumes: `postgres-data`, `redis-data`, `chroma-data`. All containers rotate their JSON logs (`LOG_MAX_SIZE`, `LOG_MAX_FILE`).
 
@@ -242,15 +200,13 @@ Networks: `backend` (all services and the data stores) and `edge` (the gateway o
 
 ```mermaid
 flowchart LR
-    PG[(postgres)] --> AZ[authorization]
-    AZ --> ID[identity] & CUST[customer]
-    ID --> AUTH[auth-service]
+    PG[(postgres)] --> AUTH[auth-service]
     RD[(redis)] --> AUTH
     AUTH --> CHAT[chat] & MEM[memory] & COMP[companion] & AN[analytics]
     RD --> CHAT & MEM
     CH[(chromadb)] --> AI[ai-service]
     MEM --> AI
-    AUTH & CHAT & MEM & COMP & AN & ID & AZ & CUST --> GW[api-gateway]
+    AUTH & CHAT & MEM & COMP & AN --> GW[api-gateway]
 ```
 
 ---
@@ -261,9 +217,7 @@ Copy `.env.example` to `.env` at the repository root. docker-compose maps these 
 
 | Root variable | Becomes | Used by |
 |---|---|---|
-| `SECRET_KEY` | `JWT_SECRET` | auth, chat, memory, companion, analytics, customer, identity |
-| `INTERNAL_SERVICE_TOKEN` | same | auth, identity, customer, authorization. **Required**: without it signup, login and permission checks fail. |
-| `REQUIRE_VERIFIED_EMAIL` | same (unset: required only when `NODE_ENV=production`) | auth-service: block login until the email is verified |
+| `SECRET_KEY` | `JWT_SECRET` | auth, chat, memory, companion, analytics |
 | `JWT_REFRESH_SECRET` | `JWT_REFRESH_SECRET` | passed to auth-service, but unused |
 | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | `DATABASE_URL` | all NestJS services |
 | `OPENAI_API_KEY`, `OPENAI_MODEL` | same | ai-service |
@@ -286,12 +240,12 @@ docker compose up -d postgres redis chromadb
 cd services/<service>
 npm install
 npx prisma generate
-npx prisma migrate deploy        # auth, chat, memory, customer, identity, authorization
+npx prisma migrate deploy        # auth, chat, memory
 # Never run `prisma db push` against the shared database: each service's schema
 # only knows its own tables, so Prisma would offer to drop everyone else's.
 # (companion and analytics use other services' tables: generate only)
-DATABASE_URL=postgresql://theauralab:theauralab_dev_pw@localhost:5432/theauralab \
-JWT_SECRET=dev-secret INTERNAL_SERVICE_TOKEN=dev-internal PORT=3000 npm run start:dev
+DATABASE_URL=postgresql://auramind:auramind_dev_pw@localhost:5432/auramind \
+JWT_SECRET=dev-secret PORT=3000 npm run start:dev
 
 # 3. ai-service
 cd services/ai-service && pip install -r requirements.txt && uvicorn main:app --port 3000
@@ -302,9 +256,11 @@ docker compose up -d --build
 
 Several services default to port 3000, so give each one a different `PORT` when you run them side by side on the host.
 
-**Tests:** `npm test` at the repository root runs the Jest unit tests of auth, identity, customer and authorization (install each service's dependencies first).
+To run AuraMind next to theauralab on one machine, change the host ports in `.env` (`API_GATEWAY_PORT`, `POSTGRES_PORT`, `REDIS_PORT`); container, network and volume names are already distinct (`the-aura-mind-*`).
 
-**Quality gates:** `npm install && npm run hooks:install` at the repository root. The pre-commit hook lints staged TypeScript files; pre-push runs `npm run quality` (ESLint plus `python -m compileall`). **No service has automated tests yet.**
+**Tests:** `npm test` at the repository root runs the Jest unit tests of auth-service, the only service with tests so far (install each service's dependencies first).
+
+**Quality gates:** `npm install && npm run hooks:install` at the repository root. The pre-commit hook lints staged TypeScript files; pre-push runs `npm run quality` (ESLint plus `python -m compileall`).
 
 ---
 
@@ -314,19 +270,16 @@ Severity reflects what someone deploying the stack today would hit first.
 
 | # | Severity | Issue | Affected |
 |---|---|---|---|
-| 1 | 🔴 High | **No email or SMS delivery** (planned: a separate notification and campaign application). In production, issuing a code returns 503 and **new users can't log in**, because verification is required there. Development skips the check by default. | identity, auth |
-| 2 | 🟠 Medium | **Coarse admin model.** authorization-service trusts any holder of `INTERNAL_SERVICE_TOKEN` and doesn't know which admin is acting. Permission checks aren't cached, and suspending or deleting an identity doesn't revoke tokens already issued. | authorization, identity, customer, auth |
-| 3 | 🟠 Medium | AI-extracted memories go to ChromaDB only, never to Postgres `memories`, so analytics and the memory UI don't see them. | ai, memory, analytics |
-| 4 | 🟠 Medium | Assistant replies aren't persisted, and `message_count`, `emotion` and `summary` are never updated. | chat, analytics |
-| 5 | 🟠 Medium | Chat sockets don't check that the user owns the `conversationId` they send. | chat |
-| 6 | 🟠 Medium | Redis pub/sub isn't durable, and neither chat-service nor ai-service can scale horizontally. | chat, ai |
-| 7 | 🟠 Medium | Shared database with cross-service table access (`users` is written by two services). | auth, companion, chat, analytics |
-| 8 | 🟡 Low | The refresh token is in a query string, there's one secret for both token types, there's no revocation, and the code falls back to a `changeme` secret. | auth (and all JWT verifiers) |
-| 9 | 🟡 Low | The `shared` package is unused and its types have drifted. | shared |
-| 10 | 🟡 Low | Unit tests only in auth, identity, customer and authorization (113, run with `npm test` at the root). No tests elsewhere, no CI, and no structured logging, metrics, tracing or correlation IDs anywhere. | all |
-| 11 | 🟡 Low | customer-service's outbox (`customer_events`) has no relay. | customer |
-| 12 | 🟡 Low | The repo already fails `npm run lint` (34 pre-existing ESLint errors, mostly `no-explicit-any`), so the pre-push hook can't pass. | all TypeScript services |
+| 1 | 🟠 Medium | AI-extracted memories go to ChromaDB only, never to Postgres `memories`, so analytics and the memory UI don't see them. | ai, memory, analytics |
+| 2 | 🟠 Medium | Assistant replies aren't persisted, and `message_count`, `emotion` and `summary` are never updated. | chat, analytics |
+| 3 | 🟠 Medium | Chat sockets don't check that the user owns the `conversationId` they send. | chat |
+| 4 | 🟠 Medium | Redis pub/sub isn't durable, and neither chat-service nor ai-service can scale horizontally. | chat, ai |
+| 5 | 🟠 Medium | Shared database with cross-service table access (`users` is written by two services). | auth, companion, chat, analytics |
+| 6 | 🟡 Low | The refresh token is in a query string, there's one secret for both token types, there's no revocation, no email verification, and the code falls back to a `changeme` secret. | auth (and all JWT verifiers) |
+| 7 | 🟡 Low | The `shared` package is unused and its types have drifted. | shared |
+| 8 | 🟡 Low | Unit tests only in auth-service. No structured logging, metrics, tracing or correlation IDs anywhere. | all |
+| 9 | 🟡 Low | Names still carry the old product: Redis channels `TheAuraLab:*`, package names `@TheAuraLab/*`. No `tenant_id` anywhere yet. | all |
 
-Fixed since the first version of this index: ownership and RBAC checks on customer and identity; authorization-service has migrations, a seeded `admin` role and requires the internal token; signup creates the identity with the same ID as the user, and login requires an active identity with a verified email; `/health` is public everywhere and checks its databases; nginx starts (the unused `frontend` upstream was removed); identity-service has migrations and a gateway route; customer and identity require a JWT; Swagger is hidden when `NODE_ENV=production`.
+Fixed since the first version of this index: `/health` is public everywhere and checks its databases; nginx starts (the unused `frontend` upstream was removed); Swagger is hidden when `NODE_ENV=production`; the repo is lint-clean.
 
 [DEPLOYMENT.md](DEPLOYMENT.md) is older than this index and lists some items that have since changed. For example, companion's `reset-memory` is now implemented.

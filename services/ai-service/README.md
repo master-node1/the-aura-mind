@@ -1,7 +1,7 @@
 # ai-service
 
 > The companion's "brain": a Python worker that consumes chat messages from Redis, runs a multi-agent pipeline (emotion detection, memory retrieval, wellness, research, creative and conversation agents) and publishes the reply.
-> [← Service index](../README.md) · Product spec: [docs/modules/ai-chat-agent.md](../../docs/modules/ai-chat-agent.md)
+> [← Service index](../README.md)
 
 | | |
 |---|---|

@@ -1,8 +1,8 @@
-# the-aura-lab Ecommerce - microservices orchestration.
+# AuraMind - AI chat agent microservices orchestration.
 # Usage:
 #   cp .env.example .env
 #   docker compose up -d --build
-name: the-aura-lab
+name: the-aura-mind
 
 x-host-gateway: &host-gateway-settings
   extra_hosts:
@@ -11,18 +11,18 @@ x-host-gateway: &host-gateway-settings
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: the-aura-lab-postgres
+    container_name: the-aura-mind-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-theauralab}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-theauralab_dev_pw}
-      POSTGRES_DB: ${POSTGRES_DB:-theauralab}
+      POSTGRES_USER: ${POSTGRES_USER:-auramind}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-auramind_dev_pw}
+      POSTGRES_DB: ${POSTGRES_DB:-auramind}
       POSTGRES_INITDB_ARGS: "--encoding=UTF8"
     volumes: [postgres-data:/var/lib/postgresql/data]
     networks: [backend]
     ports: ["${POSTGRES_PORT:-5432}:5432"]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-theauralab} -d ${POSTGRES_DB:-theauralab}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-auramind} -d ${POSTGRES_DB:-auramind}"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -33,7 +33,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: the-aura-lab-redis
+    container_name: the-aura-mind-redis
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "allkeys-lru"]
     volumes: [redis-data:/data]
@@ -46,7 +46,7 @@ services:
 
   chromadb:
     image: chromadb/chroma:0.4.22
-    container_name: the-aura-lab-chromadb
+    container_name: the-aura-mind-chromadb
     restart: unless-stopped
     environment:
       IS_PERSISTENT: "TRUE"
@@ -70,94 +70,24 @@ services:
     build:
       context: ./services/auth-service
       dockerfile: Dockerfile
-    container_name: the-aura-lab-auth-service
+    container_name: the-aura-mind-auth-service
     restart: unless-stopped
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       PORT: "3000"
-      DATABASE_URL: postgresql://${POSTGRES_USER:-theauralab}:${POSTGRES_PASSWORD:-theauralab_dev_pw}@host.docker.internal:5432/${POSTGRES_DB:-theauralab}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-auramind}:${POSTGRES_PASSWORD:-auramind_dev_pw}@host.docker.internal:5432/${POSTGRES_DB:-auramind}
       JWT_SECRET: ${SECRET_KEY:-change-me}
       REDIS_URL: redis://redis:6379
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-change-me-too}
-      IDENTITY_SERVICE_URL: http://identity-service:3001
-      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-}
-      # Unset: required when NODE_ENV=production, skipped otherwise. "true"/"false" overrides.
-      REQUIRE_VERIFIED_EMAIL: ${REQUIRE_VERIFIED_EMAIL:-}
     networks:
       - backend
     depends_on:
       postgres:
         condition: service_healthy
       redis:        { condition: service_healthy }
-      identity-service: { condition: service_healthy }
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/auth/health || exit 1"]
-      interval: 20s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-    logging:
-      driver: json-file
-      options: { max-size: "${LOG_MAX_SIZE:-10m}", max-file: "${LOG_MAX_FILE:-3}" }
-
-  identity-service:
-    <<: *host-gateway-settings
-    build:
-      context: ./services/identity-service
-      dockerfile: Dockerfile
-    container_name: the-aura-lab-identity-service
-    restart: unless-stopped
-    environment:
-      NODE_ENV: ${NODE_ENV:-production}
-      PORT: "3001"
-      DATABASE_URL: postgresql://${POSTGRES_USER:-theauralab}:${POSTGRES_PASSWORD:-theauralab_dev_pw}@host.docker.internal:5432/${POSTGRES_DB:-theauralab}
-      JWT_SECRET: ${SECRET_KEY:-change-me}
-      # Shared secret for service-to-service calls to /api/identity/internal/*.
-      # Unset means every internal call is rejected (fail closed).
-      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-}
-      AUTHORIZATION_SERVICE_URL: http://authorization-service:3002
-      REDIS_URL: redis://redis:6379
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
-    networks:
-      - backend
-    depends_on:
-      postgres:
-        condition: service_healthy
-      authorization-service: { condition: service_healthy }
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/api/identity/health || exit 1"]
-      interval: 20s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-    logging:
-      driver: json-file
-      options: { max-size: "${LOG_MAX_SIZE:-10m}", max-file: "${LOG_MAX_FILE:-3}" }
-
-  authorization-service:
-    <<: *host-gateway-settings
-    build:
-      context: ./services/authorization-service
-      dockerfile: Dockerfile
-    container_name: the-aura-lab-authorization-service
-    restart: unless-stopped
-    environment:
-      NODE_ENV: ${NODE_ENV:-production}
-      PORT: "3002"
-      DATABASE_URL: postgresql://${POSTGRES_USER:-theauralab}:${POSTGRES_PASSWORD:-theauralab_dev_pw}@host.docker.internal:5432/${POSTGRES_DB:-theauralab}
-      JWT_SECRET: ${SECRET_KEY:-change-me}
-      # Every endpoint except /health requires this x-internal-token.
-      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-}
-      REDIS_URL: redis://redis:6379
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
-    networks:
-      - backend
-    depends_on:
-      postgres:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3002/api/authorization/health || exit 1"]
       interval: 20s
       timeout: 5s
       retries: 5
@@ -171,12 +101,12 @@ services:
     build:
       context: ./services/chat-service
       dockerfile: Dockerfile
-    container_name: the-aura-lab-chat-service
+    container_name: the-aura-mind-chat-service
     restart: unless-stopped
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       PORT: "3000"
-      DATABASE_URL: postgresql://${POSTGRES_USER:-theauralab}:${POSTGRES_PASSWORD:-theauralab_dev_pw}@host.docker.internal:5432/${POSTGRES_DB:-theauralab}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-auramind}:${POSTGRES_PASSWORD:-auramind_dev_pw}@host.docker.internal:5432/${POSTGRES_DB:-auramind}
       JWT_SECRET: ${SECRET_KEY:-change-me}
       REDIS_URL: redis://redis:6379
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
@@ -202,12 +132,12 @@ services:
     build:
       context: ./services/memory-service
       dockerfile: Dockerfile
-    container_name: the-aura-lab-memory-service
+    container_name: the-aura-mind-memory-service
     restart: unless-stopped
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       PORT: "3000"
-      DATABASE_URL: postgresql://${POSTGRES_USER:-theauralab}:${POSTGRES_PASSWORD:-theauralab_dev_pw}@host.docker.internal:5432/${POSTGRES_DB:-theauralab}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-auramind}:${POSTGRES_PASSWORD:-auramind_dev_pw}@host.docker.internal:5432/${POSTGRES_DB:-auramind}
       JWT_SECRET: ${SECRET_KEY:-change-me}
       REDIS_URL: redis://redis:6379
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
@@ -233,12 +163,12 @@ services:
     build:
       context: ./services/companion-service
       dockerfile: Dockerfile
-    container_name: the-aura-lab-companion-service
+    container_name: the-aura-mind-companion-service
     restart: unless-stopped
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       PORT: "3000"
-      DATABASE_URL: postgresql://${POSTGRES_USER:-theauralab}:${POSTGRES_PASSWORD:-theauralab_dev_pw}@host.docker.internal:5432/${POSTGRES_DB:-theauralab}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-auramind}:${POSTGRES_PASSWORD:-auramind_dev_pw}@host.docker.internal:5432/${POSTGRES_DB:-auramind}
       JWT_SECRET: ${SECRET_KEY:-change-me}
       REDIS_URL: redis://redis:6379
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
@@ -263,12 +193,12 @@ services:
     build:
       context: ./services/analytics-service
       dockerfile: Dockerfile
-    container_name: the-aura-lab-analytics-service
+    container_name: the-aura-mind-analytics-service
     restart: unless-stopped
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       PORT: "3000"
-      DATABASE_URL: postgresql://${POSTGRES_USER:-theauralab}:${POSTGRES_PASSWORD:-theauralab_dev_pw}@host.docker.internal:5432/${POSTGRES_DB:-theauralab}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-auramind}:${POSTGRES_PASSWORD:-auramind_dev_pw}@host.docker.internal:5432/${POSTGRES_DB:-auramind}
       JWT_SECRET: ${SECRET_KEY:-change-me}
       REDIS_URL: redis://redis:6379
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
@@ -288,45 +218,13 @@ services:
       driver: json-file
       options: { max-size: "${LOG_MAX_SIZE:-10m}", max-file: "${LOG_MAX_FILE:-3}" }
 
-  customer-service:
-    <<: *host-gateway-settings
-    build:
-      context: ./services/customer-service
-      dockerfile: Dockerfile
-    container_name: the-aura-lab-customer-service
-    restart: unless-stopped
-    environment:
-      NODE_ENV: ${NODE_ENV:-production}
-      PORT: "3000"
-      DATABASE_URL: postgresql://${POSTGRES_USER:-theauralab}:${POSTGRES_PASSWORD:-theauralab_dev_pw}@host.docker.internal:5432/${POSTGRES_DB:-theauralab}
-      JWT_SECRET: ${SECRET_KEY:-change-me}
-      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-}
-      AUTHORIZATION_SERVICE_URL: http://authorization-service:3002
-      REDIS_URL: redis://redis:6379
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
-    networks:
-      - backend
-    depends_on:
-      postgres:
-        condition: service_healthy
-      authorization-service: { condition: service_healthy }
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/customer/health || exit 1"]
-      interval: 20s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-    logging:
-      driver: json-file
-      options: { max-size: "${LOG_MAX_SIZE:-10m}", max-file: "${LOG_MAX_FILE:-3}" }
-
   # ai-service: Python FastAPI worker; subscribes to Redis pub/sub channel
-  # the-aura-lab:ai:process and publishes to the-aura-lab:ai:response.
+  # TheAuraLab:ai:process and publishes to TheAuraLab:ai:response.
   ai-service:
     build:
       context: ./services/ai-service
       dockerfile: Dockerfile
-    container_name: the-aura-lab-ai
+    container_name: the-aura-mind-ai
     restart: unless-stopped
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
@@ -356,7 +254,7 @@ services:
 
   api-gateway:
     build: {context: ./services/api-gateway, dockerfile: Dockerfile}
-    container_name: the-aura-lab-gateway
+    container_name: the-aura-mind-gateway
     restart: unless-stopped
     networks: [backend, edge]
     ports: ["${API_GATEWAY_PORT:-8001}:8001"]
@@ -366,9 +264,6 @@ services:
       memory-service:        { condition: service_healthy }
       companion-service:     { condition: service_healthy }
       analytics-service:     { condition: service_healthy }
-      authorization-service: { condition: service_healthy }
-      identity-service:      { condition: service_healthy }
-      customer-service:      { condition: service_healthy }
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8001/health || exit 1"]
       interval: 30s
@@ -380,10 +275,10 @@ services:
       options: { max-size: "${LOG_MAX_SIZE:-10m}", max-file: "${LOG_MAX_FILE:-3}" }
 
 networks:
-  backend: {driver: bridge, name: the-aura-lab-backend}
-  edge:    {driver: bridge, name: the-aura-lab-edge}
+  backend: {driver: bridge, name: the-aura-mind-backend}
+  edge:    {driver: bridge, name: the-aura-mind-edge}
 
 volumes:
-  postgres-data: {name: the-aura-lab-postgres-data}
-  redis-data:    {name: the-aura-lab-redis-data}
-  chroma-data:   {name: the-aura-lab-chroma-data}
+  postgres-data: {name: the-aura-mind-postgres-data}
+  redis-data:    {name: the-aura-mind-redis-data}
+  chroma-data:   {name: the-aura-mind-chroma-data}

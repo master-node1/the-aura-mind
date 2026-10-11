@@ -68,7 +68,7 @@ REQUESTED="auth-service,api-gateway" .github/scripts/detect-changed-services.sh
 
 Each service image is built once with the GitHub Actions layer cache and started on the runner. It runs against real Postgres 16 and Redis 7 service containers, plus ChromaDB for `ai-service`. The job:
 
-1. Starts the container. Sibling hostnames such as `identity-service` resolve to `127.0.0.1`, so a service, or the gateway, boots on its own.
+1. Starts the container. Sibling hostnames such as `memory-service` resolve to `127.0.0.1`, so a service, or the gateway, boots on its own.
 2. Waits up to 180 s for the service's health endpoint (`health_check_path`) to return 2xx. This exercises `prisma migrate deploy`, DB and Redis connectivity, and app startup.
 3. Runs `npm run test:integration` if the service defines it. Add that script to a service to plug in API → service → DB tests. `DATABASE_URL` and `REDIS_URL` are set for it.
 
@@ -76,11 +76,11 @@ Container logs are printed when the job fails.
 
 ### Docker build and push
 
-The image is pushed to `<account>.dkr.ecr.<region>.amazonaws.com/the-aura-lab/<service>:<git-sha>`. The ECR repository is created on first use with immutable tags, scan on push and encryption. Re-running a job whose tag already exists skips the push.
+The image is pushed to `<account>.dkr.ecr.<region>.amazonaws.com/the-aura-mind/<service>:<git-sha>`. The ECR repository is created on first use with immutable tags, scan on push and encryption. Re-running a job whose tag already exists skips the push.
 
 ### Terraform plan and apply
 
-Each environment/service pair has its own state file in S3: `s3://$TF_STATE_BUCKET/the-aura-lab/<env>/<service>.tfstate`. Locking uses native S3 lockfiles (`use_lockfile`), so no DynamoDB table is needed.
+Each environment/service pair has its own state file in S3: `s3://$TF_STATE_BUCKET/the-aura-mind/<env>/<service>.tfstate`. Locking uses native S3 lockfiles (`use_lockfile`), so no DynamoDB table is needed.
 
 The plan job writes the plan to the job summary and uploads it as an artifact. The apply job runs inside the GitHub Environment for the target environment and applies **that saved plan**. If the state changed after the plan was made, Terraform rejects the stale plan. Deploys of the same environment and service are serialized with a `concurrency` group.
 
@@ -97,7 +97,7 @@ terraform plan \
 
 **Kubernetes objects are always deployed with Helm.** The stack contains one `helm_release` per service. It installs the shared chart [`infra/helm/aura-service`](../../infra/helm/aura-service) with values that Terraform renders from the two variable files. Terraform still owns plan, apply, destroy and state; Helm owns the Kubernetes objects. The release uses `atomic` and `wait`, so a rollout that doesn't become healthy within 10 minutes is rolled back to the previous Helm revision and the apply fails. Don't add raw manifests or `kubernetes_*` workload resources: extend the chart instead.
 
-The chart creates these objects, all named after the service so in-cluster DNS matches docker-compose (for example `http://identity-service:3001`):
+The chart creates these objects, all named after the service so in-cluster DNS matches docker-compose (for example `http://memory-service:3000`):
 
 | Object | Notes |
 |---|---|
@@ -106,7 +106,7 @@ The chart creates these objects, all named after the service so in-cluster DNS m
 | `HorizontalPodAutoscaler` (v2) | CPU based, between `min_replicas` and `max_replicas` |
 | `PodDisruptionBudget` | Only when `min_replicas > 1` |
 
-**Secrets are not managed by Terraform**, so they never reach state or plan output. Each pod loads the existing Kubernetes Secret `<service>-secrets` through `envFrom`. Create it with External Secrets Operator or Secrets Manager CSI, or by hand. It holds keys such as `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET`, `JWT_REFRESH_SECRET`, `INTERNAL_SERVICE_TOKEN` and `OPENAI_API_KEY`. If the secret is missing, pods fail with `CreateContainerConfigError` and the apply times out.
+**Secrets are not managed by Terraform**, so they never reach state or plan output. Each pod loads the existing Kubernetes Secret `<service>-secrets` through `envFrom`. Create it with External Secrets Operator or Secrets Manager CSI, or by hand. It holds keys such as `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET`, `JWT_REFRESH_SECRET` and `OPENAI_API_KEY`. If the secret is missing, pods fail with `CreateContainerConfigError` and the apply times out.
 
 ### Adding a service
 
@@ -129,8 +129,8 @@ helm template auth-service infra/helm/aura-service --set image.repository=x/y,im
 
 | Item | Where | Purpose |
 |---|---|---|
-| EKS cluster per environment | AWS | Names in `environments/<env>.tfvars.json` (`the-aura-lab-<env>` placeholders) |
-| Namespace `the-aura-lab` | each cluster | Not created by the service stack, because services share it |
+| EKS cluster per environment | AWS | Names in `environments/<env>.tfvars.json` (`the-aura-mind-<env>` placeholders) |
+| Namespace `the-aura-mind` | each cluster | Not created by the service stack, because services share it |
 | AWS Load Balancer Controller and metrics-server | each cluster | Gateway NLB and HPA metrics |
 | RDS Postgres, ElastiCache Redis, ChromaDB | AWS / cluster | Referenced from the `<service>-secrets` values and `CHROMA_HOST` |
 | S3 state bucket (versioned, encrypted) | AWS | Repository variable `TF_STATE_BUCKET` |
@@ -153,6 +153,6 @@ Region comes from `aws_region` in the environment tfvars file. It is used for EC
 ## 7. Known limitations
 
 - `.terraform.lock.hcl` isn't committed yet, so provider versions float within `~> 5.0` (aws) and `~> 2.17` (helm). Commit one generated with `terraform providers lock -platform=linux_amd64 -platform=darwin_arm64`.
-- Only `auth-, identity-, customer-` and `authorization-service` have Jest unit tests. No service defines `test:integration` yet, so integration coverage is the container smoke test.
+- Only `auth-service` has Jest unit tests. No service defines `test:integration` yet, so integration coverage is the container smoke test.
 - A manual `apply` gates on the whole run. If any selected service fails its tests, nothing is built or deployed, including services that passed.
 - Every deploy, including `dev`, is manual (workflow dispatch). It builds the image for the current `main` SHA, or reuses it if that tag is already in ECR.

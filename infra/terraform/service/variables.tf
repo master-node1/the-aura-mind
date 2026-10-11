@@ -28,7 +28,7 @@ variable "namespace" {
 variable "ecr_repository_prefix" {
   description = "ECR repository prefix; the image is <account>.dkr.ecr.<region>.amazonaws.com/<prefix>/<service>."
   type        = string
-  default     = "the-aura-lab"
+  default     = "the-aura-mind"
 }
 
 variable "common_env" {

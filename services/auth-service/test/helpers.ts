@@ -7,11 +7,3 @@ export function fakeConfig(values: Record<string, string | undefined>): ConfigSe
   } as unknown as ConfigService;
 }
 
-/** Minimal fetch Response for mocking global fetch. */
-export function jsonResponse(status: number, body: unknown = {}): Response {
-  return {
-    status,
-    ok: status >= 200 && status < 300,
-    json: async () => body,
-  } as Response;
-}

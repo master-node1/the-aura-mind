@@ -1,6 +1,8 @@
-# The Aura Lab
+# AuraMind
 
-A microservices backend for **AuraLab**, an emotionally aware AI companion with real-time chat, long-term memory and selectable personalities, plus the first services (customer, identity, authorization) of an enterprise e-commerce platform.
+**AuraMind** (formerly Sora) is an AI chat agent built to plug into any product. Today it is an emotionally aware companion with real-time chat, long-term memory and selectable personalities; the roadmap turns it into customer order-support chat, call emotion analysis and admin help for host products such as theauralab and theauracoach, integrated through APIs and adapters rather than shared databases.
+
+It was split out of [master-node1/the-aura-lab](https://github.com/master-node1/the-aura-lab) with its full history. It has its own login, database and signing secret.
 
 | | |
 |---|---|
@@ -29,26 +31,13 @@ Each README covers HLD, LLD, API, DB schema, flows, configuration and limitation
 | Domain | Service | README |
 |---|---|---|
 | Edge | api-gateway (nginx) | [services/api-gateway](services/api-gateway/README.md) |
-| Companion | auth-service | [services/auth-service](services/auth-service/README.md) |
-| Companion | chat-service | [services/chat-service](services/chat-service/README.md) |
-| Companion | memory-service | [services/memory-service](services/memory-service/README.md) |
-| Companion | companion-service | [services/companion-service](services/companion-service/README.md) |
-| Companion | analytics-service | [services/analytics-service](services/analytics-service/README.md) |
-| Companion | ai-service (Python) | [services/ai-service](services/ai-service/README.md) |
-| E-commerce | customer-service | [services/customer-service](services/customer-service/README.md) |
-| E-commerce | identity-service | [services/identity-service](services/identity-service/README.md) |
-| E-commerce | authorization-service | [services/authorization-service](services/authorization-service/README.md) |
+| AuraMind | auth-service | [services/auth-service](services/auth-service/README.md) |
+| AuraMind | chat-service | [services/chat-service](services/chat-service/README.md) |
+| AuraMind | memory-service | [services/memory-service](services/memory-service/README.md) |
+| AuraMind | companion-service | [services/companion-service](services/companion-service/README.md) |
+| AuraMind | analytics-service | [services/analytics-service](services/analytics-service/README.md) |
+| AuraMind | ai-service (Python) | [services/ai-service](services/ai-service/README.md) |
 | Library | shared types | [services/shared](services/shared/README.md) |
-
-### Product and business requirements
-
-| Document | Contents |
-|---|---|
-| [docs/README.md](docs/README.md) | E-commerce PRD index: executive summary, goals, scope, NFRs, roles |
-| [docs/modules/](docs/modules) | Functional specs per module (customer, identity, authorization, AI chat, …) |
-| [docs/business-rules/](docs/business-rules) | Pricing, payments, refunds, returns, coupons, inventory |
-| [docs/workflows/](docs/workflows) | Order, payment, return, inventory and warehouse flows |
-| [docs/api/](docs/api) | Target API specs |
 
 ### Contributor guidance
 
@@ -63,10 +52,10 @@ Each README covers HLD, LLD, API, DB schema, flows, configuration and limitation
 
 ```text
 .
-├── docker-compose.yml        # full stack: postgres, redis, chromadb, 9 services + gateway
+├── docker-compose.yml        # full stack: postgres, redis, chromadb, 6 services + gateway
 ├── .env.example              # root environment template (copy to .env)
 ├── services/                 # all microservices (see services/README.md)
-├── docs/                     # product requirements, business rules, workflows
+├── docs/                     # CI/CD guide and agent guidance
 ├── infra/helm/aura-service/  # Helm chart used for every Kubernetes deployment
 ├── infra/terraform/service/  # per-service EKS deployment stack (Terraform → Helm release)
 ├── .github/                  # CI/CD workflow and change-detection script
@@ -78,15 +67,11 @@ Each README covers HLD, LLD, API, DB schema, flows, configuration and limitation
 ## Quick start
 
 ```sh
-cp .env.example .env          # then set SECRET_KEY, INTERNAL_SERVICE_TOKEN and OPENAI_API_KEY
+cp .env.example .env          # then set SECRET_KEY and OPENAI_API_KEY
 docker compose up -d --build
 curl http://localhost:8001/health
 
-# make an existing identity the first admin
-docker compose exec authorization-service node dist/cli/assign-role.js <identityId>
 ```
-
-With `NODE_ENV=production`, new users must verify their email before logging in, and no email provider exists yet. For local development, set `NODE_ENV=development` in `.env`: the email check is skipped, verification codes are returned as `devCode` by the internal API, and Swagger is enabled. Override the check with `REQUIRE_VERIFIED_EMAIL=true` or `false`. See [identity-service §3.6](services/identity-service/README.md#36-verification-delivery).
 
 Swagger UI for each NestJS service is at `/api/<service>/docs` when `NODE_ENV` isn't `production` (compose defaults to `production`, so set `NODE_ENV=development` in `.env` to see it). The [service index](services/README.md#service-index) lists the ports and routes, and [known issues](services/README.md#cross-cutting-known-issues) lists the problems that currently affect startup.
 

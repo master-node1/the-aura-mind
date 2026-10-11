@@ -3,7 +3,7 @@ provider "aws" {
 
   default_tags {
     tags = {
-      Project     = "the-aura-lab"
+      Project     = "the-aura-mind"
       Environment = var.environment
       Service     = var.service_name
       ManagedBy   = "terraform"

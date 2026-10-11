@@ -1,45 +1,20 @@
-import {
-  Injectable,
-  ConflictException,
-  ForbiddenException,
-  UnauthorizedException,
-  NotFoundException,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, ConflictException, UnauthorizedException, NotFoundException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { Prisma, User } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
-import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { IdentityClient, IdentityRecord } from '../identity/identity.client';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 
-// Identity statuses that may still sign in. SUSPENDED, LOCKED, DEACTIVATED, ARCHIVED
-// and DELETED are refused.
-const SIGN_IN_STATUSES = new Set(['PENDING_VERIFICATION', 'VERIFIED', 'ACTIVE']);
-
 @Injectable()
 export class AuthService {
-  private readonly logger = new Logger(AuthService.name);
-  private readonly requireVerifiedEmail: boolean;
-
   constructor(
     private prisma: PrismaService,
     private jwt: JwtService,
     private config: ConfigService,
-    private identities: IdentityClient,
-  ) {
-    // Enforced in production; skipped elsewhere until a notification service can deliver codes.
-    const flag = config.get<string>('REQUIRE_VERIFIED_EMAIL');
-    this.requireVerifiedEmail = flag ? flag !== 'false' : config.get<string>('NODE_ENV') === 'production';
-  }
+  ) {}
 
-  /**
-   * Creates the identity in identity-service first, then the user with the same ID, so
-   * JWT sub = users.id = identities.id = customers.identity_id.
-   */
   async register(dto: RegisterDto) {
     const existingEmail = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (existingEmail) throw new ConflictException('Email already registered');
@@ -47,14 +22,11 @@ export class AuthService {
     const existingUsername = await this.prisma.user.findUnique({ where: { username: dto.username } });
     if (existingUsername) throw new ConflictException('Username already taken');
 
-    const identityId = await this.createOrRecoverIdentity(dto);
-
     const hashedPassword = await bcrypt.hash(dto.password, 12);
     let user: User;
     try {
       user = await this.prisma.user.create({
         data: {
-          id: identityId,
           email: dto.email,
           username: dto.username,
           hashedPassword,
@@ -62,14 +34,12 @@ export class AuthService {
         },
       });
     } catch (error) {
-      // Lost a race with a concurrent registration. The identity is reused on retry.
+      // Lost a race with a concurrent registration.
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         throw new ConflictException('Email or username already registered');
       }
       throw error;
     }
-
-    await this.identities.requestEmailVerification(identityId);
     return this.sanitizeUser(user);
   }
 
@@ -82,7 +52,6 @@ export class AuthService {
 
     if (!user.isActive) throw new UnauthorizedException('Account is deactivated');
 
-    await this.assertIdentityMaySignIn(user);
     return this.generateTokens(user.id, user.email);
   }
 
@@ -99,7 +68,6 @@ export class AuthService {
     }
     if (!user || !user.isActive) throw new UnauthorizedException('Invalid refresh token');
 
-    await this.assertIdentityMaySignIn(user);
     return this.generateTokens(user.id, user.email);
   }
 
@@ -107,59 +75,6 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
     return this.sanitizeUser(user);
-  }
-
-  /**
-   * Creates the identity, or reuses one left behind by an earlier registration that
-   * failed after creating it (same email, no user row yet).
-   */
-  private async createOrRecoverIdentity(dto: RegisterDto): Promise<string> {
-    try {
-      const identity = await this.identities.create({
-        id: randomUUID(),
-        email: dto.email,
-        displayName: dto.username,
-        registrationSource: 'auth-service',
-      });
-      return identity.id;
-    } catch (error) {
-      if (!(error instanceof ConflictException)) throw error;
-      const orphan = await this.identities.findByEmail(dto.email);
-      const claimed = orphan && (await this.prisma.user.findUnique({ where: { id: orphan.id } }));
-      if (!orphan || claimed || orphan.deletedAt) throw new ConflictException('Email already registered');
-      return orphan.id;
-    }
-  }
-
-  /**
-   * Refuses suspended/deleted identities and, when email verification is required
-   * (production by default), unverified email addresses. Users created before identities existed get one now.
-   */
-  private async assertIdentityMaySignIn(user: User): Promise<void> {
-    let identity: IdentityRecord | null = await this.identities.findById(user.id);
-    if (!identity) {
-      try {
-        identity = await this.identities.create({
-          id: user.id,
-          email: user.email,
-          displayName: user.username,
-          registrationSource: 'auth-service-backfill',
-        });
-      } catch (error) {
-        if (!(error instanceof ConflictException)) throw error;
-        // Another identity already owns this email under a different ID.
-        this.logger.error(`Cannot backfill identity for user ${user.id}: email belongs to another identity`);
-        throw new ForbiddenException('Account requires attention; contact support');
-      }
-      await this.identities.requestEmailVerification(identity.id);
-    }
-
-    if (identity.deletedAt || !SIGN_IN_STATUSES.has(identity.status)) {
-      throw new ForbiddenException('Account is not active');
-    }
-    if (this.requireVerifiedEmail && !identity.isEmailVerified) {
-      throw new ForbiddenException('Email address is not verified');
-    }
   }
 
   private generateTokens(userId: string, email: string) {

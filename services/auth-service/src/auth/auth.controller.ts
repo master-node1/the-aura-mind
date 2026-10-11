@@ -16,7 +16,6 @@ export class AuthController {
   @ApiOperation({ summary: 'Register a new user' })
   @ApiResponse({ status: 201, description: 'User created successfully' })
   @ApiResponse({ status: 409, description: 'Email or username already taken' })
-  @ApiResponse({ status: 503, description: 'identity-service unavailable' })
   register(@Body() dto: RegisterDto) {
     return this.auth.register(dto);
   }
@@ -26,8 +25,6 @@ export class AuthController {
   @ApiOperation({ summary: 'Login and receive JWT tokens' })
   @ApiResponse({ status: 200, description: 'Returns access_token and refresh_token' })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
-  @ApiResponse({ status: 403, description: 'Email not verified, or identity suspended/deleted' })
-  @ApiResponse({ status: 503, description: 'identity-service unavailable' })
   login(@Body() dto: LoginDto) {
     return this.auth.login(dto);
   }

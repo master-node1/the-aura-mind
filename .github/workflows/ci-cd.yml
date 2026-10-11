@@ -57,7 +57,7 @@ env:
   TF_VERSION: "1.13.3"
   TF_DIR: infra/terraform/service
   HELM_VERSION: "v3.19.0"
-  ECR_PREFIX: the-aura-lab
+  ECR_PREFIX: the-aura-mind
 
 jobs:
   # ───────────────────────────────────────────────────────────────────────────
@@ -317,10 +317,7 @@ jobs:
             -e REDIS_URL="$REDIS_URL" \
             -e JWT_SECRET=ci-jwt-secret \
             -e JWT_REFRESH_SECRET=ci-jwt-refresh-secret \
-            -e INTERNAL_SERVICE_TOKEN=ci-internal-token \
             -e CORS_ORIGINS=http://localhost:3000 \
-            -e IDENTITY_SERVICE_URL=http://identity-service:3001 \
-            -e AUTHORIZATION_SERVICE_URL=http://authorization-service:3002 \
             -e CHROMA_HOST=127.0.0.1 -e CHROMA_PORT=8000 \
             -e MEMORY_SERVICE_URL=http://memory-service:3000 \
             "$IMAGE"
@@ -508,7 +505,7 @@ jobs:
         run: |
           terraform init \
             -backend-config="bucket=$TF_STATE_BUCKET" \
-            -backend-config="key=the-aura-lab/$ENVIRONMENT/$SERVICE.tfstate" \
+            -backend-config="key=the-aura-mind/$ENVIRONMENT/$SERVICE.tfstate" \
             -backend-config="region=$AWS_REGION"
 
       - name: Terraform validate
@@ -604,7 +601,7 @@ jobs:
         run: |
           terraform init \
             -backend-config="bucket=$TF_STATE_BUCKET" \
-            -backend-config="key=the-aura-lab/$ENVIRONMENT/$SERVICE.tfstate" \
+            -backend-config="key=the-aura-mind/$ENVIRONMENT/$SERVICE.tfstate" \
             -backend-config="region=$AWS_REGION"
 
       # Applying the saved plan guarantees exactly what was reviewed is executed;

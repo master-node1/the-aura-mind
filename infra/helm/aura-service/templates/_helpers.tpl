@@ -10,7 +10,7 @@ app.kubernetes.io/instance: {{ include "aura-service.name" . }}-{{ .Values.envir
 
 {{- define "aura-service.labels" -}}
 {{ include "aura-service.selectorLabels" . }}
-app.kubernetes.io/part-of: the-aura-lab
+app.kubernetes.io/part-of: the-aura-mind
 app.kubernetes.io/version: {{ .Values.image.tag | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version }}
