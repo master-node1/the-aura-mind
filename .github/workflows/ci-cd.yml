@@ -1,0 +1,621 @@
+# CI/CD for the services/ monorepo.
+#
+# Only services touched by the change are tested, built and deployed
+# (see .github/scripts/detect-changed-services.sh).
+#
+#   pull_request -> main : unit + integration tests, terraform plan (dev)
+#   push         -> main : unit + integration tests, terraform plan (dev)
+#   workflow_dispatch    : plan | apply | destroy for a chosen environment and
+#                          service list (apply/destroy only from main); apply
+#                          also builds and pushes the images to ECR
+#
+# The AWS jobs (build-push, terraform-plan, terraform-apply) are switched off
+# unless the repository variable ENABLE_AWS_DEPLOY is exactly 'true'; tests
+# always run.
+#
+# Full setup and operating guide: docs/architecture/ci-cd.md
+name: CI/CD
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Terraform action
+        type: choice
+        options: [plan, apply, destroy]
+        default: plan
+      environment:
+        description: Target environment
+        type: choice
+        options: [dev, staging, prod]
+        default: dev
+      services:
+        description: "Comma separated services, or 'all'. Empty = services changed in the latest commit (required for destroy)."
+        type: string
+        default: ""
+      confirm_destroy:
+        description: "For destroy only: type the environment name to confirm"
+        type: string
+        default: ""
+
+# PR runs supersede each other; runs on main are never cancelled, because each
+# one checks only the services changed by its own commit.
+concurrency:
+  group: ci-cd-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "20"
+  PYTHON_VERSION: "3.11"
+  TF_VERSION: "1.13.3"
+  TF_DIR: infra/terraform/service
+  HELM_VERSION: "v3.19.0"
+  ECR_PREFIX: the-aura-mind
+
+jobs:
+  # ───────────────────────────────────────────────────────────────────────────
+  changes:
+    name: Detect changed services
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      services: ${{ steps.detect.outputs.services }}
+      matrix: ${{ steps.detect.outputs.matrix }}
+      count: ${{ steps.detect.outputs.count }}
+      action: ${{ steps.mode.outputs.action }}
+      environment: ${{ steps.mode.outputs.environment }}
+      aws_region: ${{ steps.mode.outputs.aws_region }}
+      image_tag: ${{ steps.mode.outputs.image_tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve pipeline mode
+        id: mode
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          INPUT_ACTION: ${{ inputs.action }}
+          INPUT_ENVIRONMENT: ${{ inputs.environment }}
+          INPUT_SERVICES: ${{ inputs.services }}
+          INPUT_CONFIRM: ${{ inputs.confirm_destroy }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          SHA: ${{ github.sha }}
+        run: |
+          case "$EVENT_NAME" in
+            pull_request)      action=plan;  environment=dev; image_tag="$PR_HEAD_SHA" ;;
+            push)              action=plan;  environment=dev; image_tag="$SHA" ;;
+            workflow_dispatch) action="$INPUT_ACTION"; environment="$INPUT_ENVIRONMENT"; image_tag="$SHA" ;;
+            *) echo "::error::Unsupported event $EVENT_NAME"; exit 1 ;;
+          esac
+
+          if [[ "$EVENT_NAME" == workflow_dispatch && "$action" != plan && "$REF" != refs/heads/main ]]; then
+            echo "::error::'$action' may only run from main (got $REF)."
+            exit 1
+          fi
+          if [[ "$action" == destroy ]]; then
+            if [[ "$INPUT_CONFIRM" != "$environment" ]]; then
+              echo "::error::Destroy requires confirm_destroy to equal '$environment'."
+              exit 1
+            fi
+            if [[ -z "${INPUT_SERVICES// /}" ]]; then
+              echo "::error::Destroy requires an explicit services list (or 'all')."
+              exit 1
+            fi
+          fi
+
+          env_file="$TF_DIR/environments/$environment.tfvars.json"
+          aws_region=$(jq -er '.aws_region' "$env_file")
+
+          {
+            echo "action=$action"
+            echo "environment=$environment"
+            echo "aws_region=$aws_region"
+            echo "image_tag=$image_tag"
+          } >> "$GITHUB_OUTPUT"
+          echo "Mode: action=$action environment=$environment region=$aws_region image_tag=$image_tag"
+
+      - name: Detect changed services
+        id: detect
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          REQUESTED: ${{ inputs.services }}
+        run: |
+          case "$EVENT_NAME" in
+            pull_request)
+              # Diff from the merge base so commits merged into main after the
+              # branch was cut are not attributed to this PR.
+              export HEAD_SHA="$PR_HEAD_SHA"
+              export BASE_SHA
+              BASE_SHA=$(git merge-base "$PR_BASE_SHA" "$PR_HEAD_SHA")
+              ;;
+            push)
+              export BASE_SHA="$PUSH_BEFORE_SHA"
+              ;;
+            workflow_dispatch)
+              export BASE_SHA
+              BASE_SHA=$(git rev-parse HEAD~1 2>/dev/null || true)
+              ;;
+          esac
+          .github/scripts/detect-changed-services.sh
+
+      - name: Summary
+        env:
+          SERVICES: ${{ steps.detect.outputs.services }}
+          ACTION: ${{ steps.mode.outputs.action }}
+          ENVIRONMENT: ${{ steps.mode.outputs.environment }}
+        run: |
+          {
+            echo "### Pipeline plan"
+            echo "- **Action:** \`$ACTION\`"
+            echo "- **Environment:** \`$ENVIRONMENT\`"
+            echo "- **Services:** \`$SERVICES\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ───────────────────────────────────────────────────────────────────────────
+  unit-tests:
+    name: Unit tests (${{ matrix.service }})
+    needs: changes
+    if: needs.changes.outputs.count != '0' && needs.changes.outputs.action != 'destroy'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.changes.outputs.matrix) }}
+    defaults:
+      run:
+        working-directory: services/${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Node / NestJS ──
+      - if: matrix.runtime == 'node'
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: services/${{ matrix.service }}/package.json
+
+      - name: Install dependencies
+        if: matrix.runtime == 'node'
+        run: npm install --no-audit --no-fund
+
+      - name: Generate Prisma client
+        if: matrix.runtime == 'node' && hashFiles(format('services/{0}/prisma/schema.prisma', matrix.service)) != ''
+        run: npx prisma generate
+
+      - name: Run unit tests
+        if: matrix.runtime == 'node'
+        run: npm run test --if-present -- --ci
+
+      - name: Build (type check)
+        if: matrix.runtime == 'node'
+        run: npm run build
+
+      # ── Python ──
+      - if: matrix.runtime == 'python'
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Byte-compile sources
+        if: matrix.runtime == 'python'
+        run: python -m compileall -q .
+
+      - name: Run unit tests
+        if: matrix.runtime == 'python'
+        run: |
+          if [[ -d tests ]]; then
+            pip install -r requirements.txt pytest
+            pytest -q tests
+          else
+            echo "::notice::No tests/ directory in services/${{ matrix.service }}; skipping pytest."
+          fi
+
+      # ── Static (nginx gateway) ──
+      - name: Validate nginx configuration
+        if: matrix.runtime == 'static' && hashFiles(format('services/{0}/nginx.conf', matrix.service)) != ''
+        run: |
+          base_image=$(awk 'toupper($1)=="FROM" {print $2; exit}' Dockerfile)
+          add_hosts=()
+          while read -r host; do
+            add_hosts+=(--add-host "$host:127.0.0.1")
+          done < <(grep -oE 'server +[A-Za-z0-9.-]+:[0-9]+' nginx.conf | awk '{print $2}' | cut -d: -f1 | sort -u)
+          docker run --rm "${add_hosts[@]}" \
+            -v "$PWD/nginx.conf:/etc/nginx/nginx.conf:ro" \
+            "$base_image" nginx -t
+
+  # ───────────────────────────────────────────────────────────────────────────
+  integration-tests:
+    name: Integration tests (${{ matrix.service }})
+    needs: [changes, unit-tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.changes.outputs.matrix) }}
+    # Ephemeral, CI-only database: the credentials below are not secrets.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: theauralab
+          POSTGRES_PASSWORD: ci_only_password
+          POSTGRES_DB: theauralab
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U theauralab"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      IMAGE: ci/${{ matrix.service }}:${{ github.sha }}
+      SERVICE: ${{ matrix.service }}
+      PORT: ${{ matrix.port }}
+      HEALTH_PATH: ${{ matrix.health_path }}
+      DATABASE_URL: postgresql://theauralab:ci_only_password@127.0.0.1:5432/theauralab
+      REDIS_URL: redis://127.0.0.1:6379
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: services/${{ matrix.service }}
+          load: true
+          push: false
+          tags: ${{ env.IMAGE }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,scope=${{ matrix.service }},mode=max
+
+      - name: Start ChromaDB
+        if: matrix.runtime == 'python'
+        run: |
+          # Bypass the image entrypoint: it force-reinstalls chroma-hnswlib at
+          # startup, which now pulls NumPy 2 and breaks chromadb 0.4.22
+          # ("np.float_ was removed"). Run the server on the image's pinned deps.
+          docker run -d --name chromadb -p 8000:8000 \
+            -e IS_PERSISTENT=FALSE -e ANONYMIZED_TELEMETRY=False \
+            --entrypoint uvicorn \
+            chromadb/chroma:0.4.22 \
+            chromadb.app:app --host 0.0.0.0 --port 8000 --workers 1
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8000/api/v1/heartbeat >/dev/null && exit 0
+            sleep 2
+          done
+          echo "::error::ChromaDB did not become ready"; docker logs chromadb; exit 1
+
+      - name: Start service container
+        run: |
+          # Resolve every sibling service name to localhost so services (and the
+          # nginx gateway, which resolves upstreams at startup) can boot alone.
+          add_hosts=()
+          for dir in services/*/; do
+            [[ -f "$dir/Dockerfile" ]] && add_hosts+=(--add-host "$(basename "$dir"):127.0.0.1")
+          done
+          docker run -d --name app --network host "${add_hosts[@]}" \
+            -e NODE_ENV=production \
+            -e PORT="$PORT" \
+            -e DATABASE_URL="$DATABASE_URL" \
+            -e REDIS_URL="$REDIS_URL" \
+            -e JWT_SECRET=ci-jwt-secret \
+            -e JWT_REFRESH_SECRET=ci-jwt-refresh-secret \
+            -e CORS_ORIGINS=http://localhost:3000 \
+            -e CHROMA_HOST=127.0.0.1 -e CHROMA_PORT=8000 \
+            -e MEMORY_SERVICE_URL=http://memory-service:3000 \
+            "$IMAGE"
+
+      - name: Smoke test (migrations + health endpoint)
+        run: |
+          url="http://127.0.0.1:${PORT}${HEALTH_PATH}"
+          for i in $(seq 1 60); do
+            if body=$(curl -fsS --max-time 3 "$url"); then
+              echo "Healthy after ~$((i * 3))s: $body"
+              exit 0
+            fi
+            if [[ "$(docker inspect -f '{{.State.Running}}' app)" != true ]]; then
+              echo "::error::Container exited before becoming healthy"
+              exit 1
+            fi
+            sleep 3
+          done
+          echo "::error::$SERVICE did not report healthy at $url within 180s"
+          exit 1
+
+      - name: Run integration test suite
+        if: matrix.runtime == 'node'
+        working-directory: services/${{ matrix.service }}
+        run: |
+          if jq -e '.scripts["test:integration"]' package.json >/dev/null; then
+            npm install --no-audit --no-fund
+            npm run test:integration -- --ci
+          else
+            echo "::notice::No test:integration script in services/$SERVICE; smoke test only."
+          fi
+
+      - name: Container logs
+        if: failure()
+        run: |
+          docker logs app || true
+          docker logs chromadb 2>/dev/null || true
+
+      - name: Clean up
+        if: always()
+        run: docker rm -f app chromadb >/dev/null 2>&1 || true
+
+  # ───────────────────────────────────────────────────────────────────────────
+  build-push:
+    name: Build & push (${{ matrix.service }})
+    needs: [changes, integration-tests]
+    # AWS jobs stay off unless the repository variable ENABLE_AWS_DEPLOY is
+    # 'true' (docs/architecture/ci-cd.md#5-one-time-setup).
+    if: vars.ENABLE_AWS_DEPLOY == 'true' && needs.changes.outputs.action == 'apply' && needs.changes.outputs.count != '0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.changes.outputs.matrix) }}
+    env:
+      AWS_REGION: ${{ needs.changes.outputs.aws_region }}
+      IMAGE_TAG: ${{ needs.changes.outputs.image_tag }}
+      SERVICE: ${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve repository name
+        run: echo "REPOSITORY=$ECR_PREFIX/$SERVICE" >> "$GITHUB_ENV"
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Ensure ECR repository exists
+        run: |
+          if ! aws ecr describe-repositories --repository-names "$REPOSITORY" >/dev/null 2>&1; then
+            aws ecr create-repository \
+              --repository-name "$REPOSITORY" \
+              --image-tag-mutability IMMUTABLE \
+              --image-scanning-configuration scanOnPush=true \
+              --encryption-configuration encryptionType=AES256 >/dev/null
+            echo "Created ECR repository $REPOSITORY"
+          fi
+
+      - name: Check whether this tag is already pushed
+        id: exists
+        run: |
+          if aws ecr describe-images --repository-name "$REPOSITORY" --image-ids imageTag="$IMAGE_TAG" >/dev/null 2>&1; then
+            echo "pushed=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::$REPOSITORY:$IMAGE_TAG already exists (re-run); skipping push."
+          else
+            echo "pushed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.exists.outputs.pushed != 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push image
+        if: steps.exists.outputs.pushed != 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: services/${{ matrix.service }}
+          push: true
+          tags: ${{ steps.ecr.outputs.registry }}/${{ env.REPOSITORY }}:${{ env.IMAGE_TAG }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ env.IMAGE_TAG }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,scope=${{ matrix.service }},mode=max
+
+  # ───────────────────────────────────────────────────────────────────────────
+  terraform-plan:
+    name: Terraform plan (${{ needs.changes.outputs.environment }} / ${{ matrix.service }})
+    needs: [changes, build-push]
+    # Deploy plans only run once every image was pushed. PR plans are
+    # informational and skipped for forks, which get no AWS credentials.
+    # Skipped entirely unless the repository variable ENABLE_AWS_DEPLOY is 'true'.
+    if: >-
+      !cancelled() &&
+      vars.ENABLE_AWS_DEPLOY == 'true' &&
+      needs.changes.result == 'success' &&
+      needs.changes.outputs.count != '0' &&
+      (needs.changes.outputs.action != 'apply' || needs.build-push.result == 'success') &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.changes.outputs.matrix) }}
+    defaults:
+      run:
+        working-directory: ${{ env.TF_DIR }}
+    env:
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "false"
+      ENVIRONMENT: ${{ needs.changes.outputs.environment }}
+      ACTION: ${{ needs.changes.outputs.action }}
+      AWS_REGION: ${{ needs.changes.outputs.aws_region }}
+      IMAGE_TAG: ${{ needs.changes.outputs.image_tag }}
+      SERVICE: ${{ matrix.service }}
+      TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Helm lint
+        run: helm lint ../../helm/aura-service --strict --set image.repository=lint/lint,image.tag=lint
+
+      - name: Terraform fmt
+        run: terraform fmt -check -recursive
+
+      - name: Check AWS configuration
+        env:
+          ROLE_ARN: ${{ github.event_name == 'pull_request' && secrets.AWS_PLAN_ROLE_ARN || secrets.AWS_ROLE_ARN }}
+        run: |
+          missing=()
+          [[ -n "$ROLE_ARN" ]] || missing+=("secret AWS_ROLE_ARN")
+          [[ -n "$TF_STATE_BUCKET" ]] || missing+=("variable TF_STATE_BUCKET")
+          if (( ${#missing[@]} )); then
+            printf -v list '%s, ' "${missing[@]}"
+            echo "::error::Terraform plan needs the repository ${list%, }. See docs/architecture/ci-cd.md#5-one-time-setup"
+            exit 1
+          fi
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          # Optional least-privilege role for plans; falls back to the deploy role.
+          role-to-assume: ${{ github.event_name == 'pull_request' && secrets.AWS_PLAN_ROLE_ARN || secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Terraform init
+        run: |
+          terraform init \
+            -backend-config="bucket=$TF_STATE_BUCKET" \
+            -backend-config="key=the-aura-mind/$ENVIRONMENT/$SERVICE.tfstate" \
+            -backend-config="region=$AWS_REGION"
+
+      - name: Terraform validate
+        run: terraform validate -no-color
+
+      - name: Terraform plan
+        run: |
+          destroy_flag=()
+          [[ "$ACTION" == destroy ]] && destroy_flag=(-destroy)
+          terraform plan "${destroy_flag[@]}" -no-color -lock-timeout=5m \
+            -var-file="environments/$ENVIRONMENT.tfvars.json" \
+            -var-file="services/$SERVICE.tfvars.json" \
+            -var="service_name=$SERVICE" \
+            -var="image_tag=$IMAGE_TAG" \
+            -var="ecr_repository_prefix=$ECR_PREFIX" \
+            -out=tfplan
+          terraform show -no-color tfplan > tfplan.txt
+
+      - name: Publish plan to job summary
+        run: |
+          {
+            echo "### Terraform $ACTION plan: \`$ENVIRONMENT\` / \`$SERVICE\`"
+            echo '```hcl'
+            head -c 60000 tfplan.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload plan
+        if: needs.changes.outputs.action != 'plan'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ env.ENVIRONMENT }}-${{ matrix.service }}
+          path: |
+            ${{ env.TF_DIR }}/tfplan
+            ${{ env.TF_DIR }}/.terraform.lock.hcl
+          retention-days: 5
+          if-no-files-found: error
+          include-hidden-files: true
+
+  # ───────────────────────────────────────────────────────────────────────────
+  terraform-apply:
+    name: Terraform ${{ needs.changes.outputs.action }} (${{ needs.changes.outputs.environment }} / ${{ matrix.service }})
+    needs: [changes, terraform-plan]
+    if: >-
+      !cancelled() &&
+      needs.terraform-plan.result == 'success' &&
+      (needs.changes.outputs.action == 'apply' || needs.changes.outputs.action == 'destroy')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Configure required reviewers on the staging/prod GitHub Environments to
+    # gate deployments behind a manual approval.
+    environment:
+      name: ${{ needs.changes.outputs.environment }}
+    concurrency:
+      group: deploy-${{ needs.changes.outputs.environment }}-${{ matrix.service }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.changes.outputs.matrix) }}
+    defaults:
+      run:
+        working-directory: ${{ env.TF_DIR }}
+    env:
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "false"
+      ENVIRONMENT: ${{ needs.changes.outputs.environment }}
+      ACTION: ${{ needs.changes.outputs.action }}
+      AWS_REGION: ${{ needs.changes.outputs.aws_region }}
+      SERVICE: ${{ matrix.service }}
+      TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: tfplan-${{ env.ENVIRONMENT }}-${{ matrix.service }}
+          path: ${{ env.TF_DIR }}
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Terraform init
+        run: |
+          terraform init \
+            -backend-config="bucket=$TF_STATE_BUCKET" \
+            -backend-config="key=the-aura-mind/$ENVIRONMENT/$SERVICE.tfstate" \
+            -backend-config="region=$AWS_REGION"
+
+      # Applying the saved plan guarantees exactly what was reviewed is executed;
+      # Terraform refuses a plan that went stale since it was created.
+      - name: Terraform apply saved plan
+        run: terraform apply -no-color -lock-timeout=5m tfplan
+
+      - name: Deployment summary
+        run: |
+          {
+            echo "### Terraform $ACTION complete: \`$ENVIRONMENT\` / \`$SERVICE\`"
+            if [[ "$ACTION" == apply ]]; then
+              echo '```'
+              terraform output -no-color
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["image", "containerPort", "healthCheckPath", "autoscaling"],
+  "properties": {
+    "environment": { "type": "string", "enum": ["dev", "staging", "prod"] },
+    "image": {
+      "type": "object",
+      "required": ["repository", "tag"],
+      "properties": {
+        "repository": { "type": "string" },
+        "tag": { "type": "string", "pattern": "^$|^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$" },
+        "pullPolicy": { "type": "string", "enum": ["Always", "IfNotPresent", "Never"] }
+      }
+    },
+    "containerPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+    "healthCheckPath": { "type": "string", "pattern": "^/" },
+    "env": { "type": "object", "additionalProperties": { "type": ["string", "number", "boolean"] } },
+    "autoscaling": {
+      "type": "object",
+      "properties": {
+        "minReplicas": { "type": "integer", "minimum": 1 },
+        "maxReplicas": { "type": "integer", "minimum": 1 },
+        "targetCPUUtilizationPercentage": { "type": "integer", "minimum": 1, "maximum": 100 }
+      }
+    },
+    "service": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["ClusterIP", "LoadBalancer"] },
+        "annotations": { "type": "object", "additionalProperties": { "type": "string" } }
+      }
+    }
+  }
+}

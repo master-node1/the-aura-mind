@@ -1,0 +1,30 @@
+.
+├── .npmrc
+├── Dockerfile
+├── nest-cli.json
+├── package-lock.json
+├── package.json
+├── prisma
+│   ├── migrations
+│   │   ├── 20260722124750_init
+│   │   │   └── migration.sql
+│   │   └── migration_lock.toml
+│   └── schema.prisma
+├── src
+│   ├── app.module.ts
+│   ├── auth
+│   │   ├── auth.controller.ts
+│   │   ├── auth.module.ts
+│   │   ├── auth.service.ts
+│   │   ├── dto
+│   │   │   ├── login.dto.ts
+│   │   │   └── register.dto.ts
+│   │   └── jwt.strategy.ts
+│   ├── main.ts
+│   └── prisma
+│       ├── prisma.module.ts
+│       └── prisma.service.ts
+├── test.text
+└── tsconfig.json
+
+8 directories, 20 files

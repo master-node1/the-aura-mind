@@ -1,0 +1,51 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Analytics reads from all three tables — read-only queries
+model User {
+  id                   String         @id @default(uuid()) @db.Uuid
+  personalityArchetype String         @map("personality_archetype")
+  createdAt            DateTime       @map("created_at")
+  conversations        Conversation[]
+  memories             Memory[]
+  @@map("users")
+}
+
+model Conversation {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @map("user_id") @db.Uuid
+  messageCount Int       @map("message_count")
+  isArchived   Boolean   @map("is_archived")
+  createdAt    DateTime  @map("created_at")
+  user         User      @relation(fields: [userId], references: [id])
+  messages     Message[]
+  @@map("conversations")
+}
+
+model Message {
+  id             String       @id @default(uuid()) @db.Uuid
+  conversationId String       @map("conversation_id") @db.Uuid
+  role           String
+  emotion        String?
+  createdAt      DateTime     @map("created_at")
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  @@map("messages")
+}
+
+model Memory {
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String   @map("user_id") @db.Uuid
+  memoryType      String   @map("memory_type")
+  content         String
+  emotionTag      String   @map("emotion_tag")
+  importanceScore Float    @map("importance_score")
+  createdAt       DateTime @map("created_at")
+  user            User     @relation(fields: [userId], references: [id])
+  @@map("memories")
+}

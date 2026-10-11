@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+
+repo_root=$(git rev-parse --show-toplevel)
+cd "$repo_root"
+
+git diff --cached --check
+
+git diff --cached --name-only --diff-filter=ACMR -z -- '*.ts' '*.tsx' |
+  xargs -0 -r ./node_modules/.bin/eslint

@@ -1,0 +1,284 @@
+# AuraMind - AI chat agent microservices orchestration.
+# Usage:
+#   cp .env.example .env
+#   docker compose up -d --build
+name: the-aura-mind
+
+x-host-gateway: &host-gateway-settings
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: the-aura-mind-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-auramind}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-auramind_dev_pw}
+      POSTGRES_DB: ${POSTGRES_DB:-auramind}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8"
+    volumes: [postgres-data:/var/lib/postgresql/data]
+    networks: [backend]
+    ports: ["${POSTGRES_PORT:-5432}:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-auramind} -d ${POSTGRES_DB:-auramind}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    logging:
+      driver: json-file
+      options: { max-size: "${LOG_MAX_SIZE:-10m}", max-file: "${LOG_MAX_FILE:-3}" }
+
+  redis:
+    image: redis:7-alpine
+    container_name: the-aura-mind-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "allkeys-lru"]
+    volumes: [redis-data:/data]
+    networks: [backend]
+    ports: ["${REDIS_PORT:-6379}:6379"]
+    healthcheck: {test: ["CMD", "redis-cli", "ping"], interval: 10s, timeout: 3s, retries: 5, start_period: 5s}
+    logging:
+      driver: json-file
+      options: { max-size: "${LOG_MAX_SIZE:-10m}", max-file: "${LOG_MAX_FILE:-3}" }
+
+  chromadb:
+    image: chromadb/chroma:0.4.22
+    container_name: the-aura-mind-chromadb
+    restart: unless-stopped
+    environment:
+      IS_PERSISTENT: "TRUE"
+      PERSIST_DIRECTORY: "/chroma/chroma"
+      ANONYMIZED_TELEMETRY: "False"
+    volumes: [chroma-data:/chroma/chroma]
+    networks: [backend]
+    ports: ["${CHROMA_PORT:-8000}:8000"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8000/api/v1/heartbeat || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging:
+      driver: json-file
+      options: { max-size: "${LOG_MAX_SIZE:-10m}", max-file: "${LOG_MAX_FILE:-3}" }
+
+  auth-service:
+    <<: *host-gateway-settings
+    build:
+      context: ./services/auth-service
+      dockerfile: Dockerfile
+    container_name: the-aura-mind-auth-service
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: "3000"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-auramind}:${POSTGRES_PASSWORD:-auramind_dev_pw}@host.docker.internal:5432/${POSTGRES_DB:-auramind}
+      JWT_SECRET: ${SECRET_KEY:-change-me}
+      REDIS_URL: redis://redis:6379
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-change-me-too}
+    networks:
+      - backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:        { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/auth/health || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: json-file
+      options: { max-size: "${LOG_MAX_SIZE:-10m}", max-file: "${LOG_MAX_FILE:-3}" }
+
+  chat-service:
+    <<: *host-gateway-settings
+    build:
+      context: ./services/chat-service
+      dockerfile: Dockerfile
+    container_name: the-aura-mind-chat-service
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: "3000"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-auramind}:${POSTGRES_PASSWORD:-auramind_dev_pw}@host.docker.internal:5432/${POSTGRES_DB:-auramind}
+      JWT_SECRET: ${SECRET_KEY:-change-me}
+      REDIS_URL: redis://redis:6379
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+    networks:
+      - backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:        { condition: service_healthy }
+      auth-service: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/chat/health || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: json-file
+      options: { max-size: "${LOG_MAX_SIZE:-10m}", max-file: "${LOG_MAX_FILE:-3}" }
+
+  memory-service:
+    <<: *host-gateway-settings
+    build:
+      context: ./services/memory-service
+      dockerfile: Dockerfile
+    container_name: the-aura-mind-memory-service
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: "3000"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-auramind}:${POSTGRES_PASSWORD:-auramind_dev_pw}@host.docker.internal:5432/${POSTGRES_DB:-auramind}
+      JWT_SECRET: ${SECRET_KEY:-change-me}
+      REDIS_URL: redis://redis:6379
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+    networks:
+      - backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:        { condition: service_healthy }
+      auth-service: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/memory/health || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: json-file
+      options: { max-size: "${LOG_MAX_SIZE:-10m}", max-file: "${LOG_MAX_FILE:-3}" }
+
+  companion-service:
+    <<: *host-gateway-settings
+    build:
+      context: ./services/companion-service
+      dockerfile: Dockerfile
+    container_name: the-aura-mind-companion-service
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: "3000"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-auramind}:${POSTGRES_PASSWORD:-auramind_dev_pw}@host.docker.internal:5432/${POSTGRES_DB:-auramind}
+      JWT_SECRET: ${SECRET_KEY:-change-me}
+      REDIS_URL: redis://redis:6379
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+    networks:
+      - backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      auth-service: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/companion/health || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: json-file
+      options: { max-size: "${LOG_MAX_SIZE:-10m}", max-file: "${LOG_MAX_FILE:-3}" }
+
+  analytics-service:
+    <<: *host-gateway-settings
+    build:
+      context: ./services/analytics-service
+      dockerfile: Dockerfile
+    container_name: the-aura-mind-analytics-service
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: "3000"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-auramind}:${POSTGRES_PASSWORD:-auramind_dev_pw}@host.docker.internal:5432/${POSTGRES_DB:-auramind}
+      JWT_SECRET: ${SECRET_KEY:-change-me}
+      REDIS_URL: redis://redis:6379
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+    networks:
+      - backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      auth-service: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/analytics/health || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: json-file
+      options: { max-size: "${LOG_MAX_SIZE:-10m}", max-file: "${LOG_MAX_FILE:-3}" }
+
+  # ai-service: Python FastAPI worker; subscribes to Redis pub/sub channel
+  # TheAuraLab:ai:process and publishes to TheAuraLab:ai:response.
+  ai-service:
+    build:
+      context: ./services/ai-service
+      dockerfile: Dockerfile
+    container_name: the-aura-mind-ai
+    restart: unless-stopped
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4-turbo-preview}
+      REDIS_URL: redis://redis:6379
+      CHROMA_HOST: chromadb
+      CHROMA_PORT: "8000"
+      MEMORY_SERVICE_URL: http://memory-service:3000
+      SHORT_TERM_MEMORY_TTL: "3600"
+      MAX_SHORT_TERM_MESSAGES: "50"
+      MEMORY_IMPORTANCE_THRESHOLD: "0.6"
+    networks:
+      - backend
+    depends_on:
+      redis:        { condition: service_healthy }
+      chromadb:     { condition: service_healthy }
+      memory-service: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options: { max-size: "${LOG_MAX_SIZE:-10m}", max-file: "${LOG_MAX_FILE:-3}" }
+
+  api-gateway:
+    build: {context: ./services/api-gateway, dockerfile: Dockerfile}
+    container_name: the-aura-mind-gateway
+    restart: unless-stopped
+    networks: [backend, edge]
+    ports: ["${API_GATEWAY_PORT:-8001}:8001"]
+    depends_on:
+      auth-service:          { condition: service_healthy }
+      chat-service:          { condition: service_healthy }
+      memory-service:        { condition: service_healthy }
+      companion-service:     { condition: service_healthy }
+      analytics-service:     { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8001/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options: { max-size: "${LOG_MAX_SIZE:-10m}", max-file: "${LOG_MAX_FILE:-3}" }
+
+networks:
+  backend: {driver: bridge, name: the-aura-mind-backend}
+  edge:    {driver: bridge, name: the-aura-mind-edge}
+
+volumes:
+  postgres-data: {name: the-aura-mind-postgres-data}
+  redis-data:    {name: the-aura-mind-redis-data}
+  chroma-data:   {name: the-aura-mind-chroma-data}

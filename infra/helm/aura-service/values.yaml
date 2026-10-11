@@ -1,0 +1,63 @@
+# Default values for aura-service. Terraform (infra/terraform/service) renders
+# the per-environment/per-service values; see docs/architecture/ci-cd.md.
+
+# -- Overrides the resource name; defaults to the release name (the service name).
+nameOverride: ""
+
+environment: dev
+
+image:
+  repository: ""   # required, e.g. <account>.dkr.ecr.<region>.amazonaws.com/the-aura-mind/chat-service
+  tag: ""          # required, the git SHA built by CI
+  pullPolicy: IfNotPresent
+
+containerPort: 3000
+
+# HTTP path used by the startup, readiness and liveness probes.
+healthCheckPath: /health
+
+# Non-secret environment variables. PORT is always set from containerPort.
+env: {}
+
+# Existing Secret injected with envFrom (DATABASE_URL, JWT_SECRET, ...).
+# Defaults to <name>-secrets. Secrets are never stored in values.
+secretName: ""
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+autoscaling:
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 70
+
+# Enforce a non-root container; enable only for images that define a non-root USER.
+runAsNonRoot: false
+
+service:
+  type: ClusterIP   # ClusterIP | LoadBalancer
+  annotations: {}
+
+# Probe timings. NestJS services run `prisma migrate deploy` before listening,
+# so the startup probe allows up to ~3 minutes.
+probes:
+  startup:
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 36
+  readiness:
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+  liveness:
+    periodSeconds: 20
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+terminationGracePeriodSeconds: 30
+revisionHistoryLimit: 5

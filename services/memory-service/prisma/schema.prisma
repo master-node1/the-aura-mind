@@ -1,0 +1,24 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Memory {
+  id              String    @id @default(uuid()) @db.Uuid
+  userId          String    @map("user_id") @db.Uuid
+  memoryType      String    @default("long") @map("memory_type")
+  content         String
+  summary         String?
+  emotionTag      String    @default("neutral") @map("emotion_tag")
+  importanceScore Float     @default(0.5) @map("importance_score")
+  embeddingId     String?   @map("embedding_id") @db.Uuid
+  conversationId  String?   @map("conversation_id") @db.Uuid
+  createdAt       DateTime  @default(now()) @map("created_at")
+  accessedAt      DateTime? @map("accessed_at")
+
+  @@map("memories")
+}

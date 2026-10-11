@@ -1,0 +1,58 @@
+{{- $name := include "aura-service.name" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "aura-service.labels" . | nindent 4 }}
+spec:
+  # Replica count is owned by the HorizontalPodAutoscaler.
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  selector:
+    matchLabels:
+      {{- include "aura-service.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        {{- include "aura-service.labels" . | nindent 8 }}
+    spec:
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      containers:
+        - name: {{ $name }}
+          image: "{{ required "image.repository is required" .Values.image.repository }}:{{ required "image.tag is required" .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.containerPort }}
+          env:
+            {{- range $key, $value := .Values.env }}
+            {{- if ne $key "PORT" }}
+            - name: {{ $key }}
+              value: {{ $value | toString | quote }}
+            {{- end }}
+            {{- end }}
+            - name: PORT
+              value: {{ .Values.containerPort | toString | quote }}
+          envFrom:
+            - secretRef:
+                name: {{ include "aura-service.secretName" . }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          startupProbe:
+            {{- include "aura-service.probe" (dict "path" .Values.healthCheckPath "cfg" .Values.probes.startup) | nindent 12 }}
+          readinessProbe:
+            {{- include "aura-service.probe" (dict "path" .Values.healthCheckPath "cfg" .Values.probes.readiness) | nindent 12 }}
+          livenessProbe:
+            {{- include "aura-service.probe" (dict "path" .Values.healthCheckPath "cfg" .Values.probes.liveness) | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: {{ .Values.runAsNonRoot }}
+            {{- if .Values.runAsNonRoot }}
+            capabilities:
+              drop: ["ALL"]
+            {{- end }}
