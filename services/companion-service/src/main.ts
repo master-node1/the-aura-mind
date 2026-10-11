@@ -11,7 +11,7 @@ async function bootstrap() {
 
   if (process.env.NODE_ENV !== 'production') {
     const config = new DocumentBuilder()
-      .setTitle('TheAuraLab — Companion Service')
+      .setTitle('AuraMind — Companion Service')
       .setDescription('Manages AI companion personality archetypes, avatar configuration, and communication style.')
       .setVersion('1.0')
       .addBearerAuth()

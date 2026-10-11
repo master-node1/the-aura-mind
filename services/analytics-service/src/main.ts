@@ -11,7 +11,7 @@ async function bootstrap() {
 
   if (process.env.NODE_ENV !== 'production') {
     const config = new DocumentBuilder()
-      .setTitle('TheAuraLab — Analytics Service')
+      .setTitle('AuraMind — Analytics Service')
       .setDescription('Read-only dashboard stats: emotion trends, conversation metrics, memory statistics.')
       .setVersion('1.0')
       .addBearerAuth()

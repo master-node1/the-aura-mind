@@ -18,20 +18,20 @@ export class MemoryService {
 
   // ── Short-term (Redis) ────────────────────────────────────────────────────
   async saveShortTerm(userId: string, message: { role: string; content: string }) {
-    const key = `TheAuraLab:st:${userId}`;
+    const key = `auramind:st:${userId}`;
     await this.redis.rpush(key, JSON.stringify(message));
     await this.redis.ltrim(key, -MAX_SHORT_TERM, -1);
     await this.redis.expire(key, SHORT_TERM_TTL);
   }
 
   async getShortTerm(userId: string): Promise<{ role: string; content: string }[]> {
-    const key = `TheAuraLab:st:${userId}`;
+    const key = `auramind:st:${userId}`;
     const raw = await this.redis.lrange(key, 0, -1);
     return raw.map((item) => JSON.parse(item));
   }
 
   async clearShortTerm(userId: string) {
-    await this.redis.del(`TheAuraLab:st:${userId}`);
+    await this.redis.del(`auramind:st:${userId}`);
   }
 
   // ── Long-term (Postgres) ──────────────────────────────────────────────────
