@@ -79,9 +79,9 @@ Frontend (Next.js :3000)
 nginx API Gateway (:8001)
     ├─→ auth-service (:3000)       — JWT, register, login
     ├─→ chat-service (:3000)       — WebSocket (Socket.IO), conversations
-    │     ↓ Redis pub (TheAuraLab:ai:process)
+    │     ↓ Redis pub (auramind:ai:process)
     │   ai-service (:3000)         — Python agents, LLM, ChromaDB
-    │     ↓ Redis pub (TheAuraLab:ai:response)
+    │     ↓ Redis pub (auramind:ai:response)
     │   chat-service → Socket.IO → Frontend
     ├─→ memory-service (:3000)     — Memory CRUD, Redis short-term
     ├─→ companion-service (:3000)  — Personality, avatar config
@@ -91,10 +91,10 @@ nginx API Gateway (:8001)
 **Data Flow Example (User sends message):**
 1. Frontend WebSocket → nginx :8001 → chat-service :3000
 2. Chat-service persists message to Postgres (`conversations`, `messages`)
-3. Chat-service publishes `{userId, content, conversationId}` to Redis channel `TheAuraLab:ai:process`
+3. Chat-service publishes `{userId, content, conversationId}` to Redis channel `auramind:ai:process`
 4. AI-service (Python worker) consumes from Redis
 5. AI-service runs agent pipeline: emotion detection, memory retrieval (ChromaDB), LLM generation
-6. AI-service publishes response to Redis channel `TheAuraLab:ai:response`
+6. AI-service publishes response to Redis channel `auramind:ai:response`
 7. Chat-service subscribes to response channel, emits via Socket.IO to frontend
 
 ---
@@ -128,7 +128,7 @@ nginx API Gateway (:8001)
 
 **AI service not responding**
 - Check Redis pub/sub: `docker exec -it the-aura-mind-redis redis-cli PUBSUB CHANNELS`
-- Should see `TheAuraLab:ai:process` and `TheAuraLab:ai:response`
+- Should see `auramind:ai:process` and `auramind:ai:response`
 - Check AI service logs: `docker-compose logs -f ai-service`
 
 **Login returns 500**

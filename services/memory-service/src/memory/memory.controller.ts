@@ -46,7 +46,7 @@ export class MemoryController {
       emotion: m.emotionTag, importance: m.importanceScore,
       createdAt: m.createdAt,
     }));
-    res.setHeader('Content-Disposition', 'attachment; filename=TheAuraLab-memories.json');
+    res.setHeader('Content-Disposition', 'attachment; filename=auramind-memories.json');
     res.json({ memories: data, count: data.length });
   }
 

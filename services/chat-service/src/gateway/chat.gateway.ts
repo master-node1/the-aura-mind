@@ -11,8 +11,8 @@ import Redis from 'ioredis';
 import { REDIS_PUB, REDIS_SUB } from '../redis/redis.module';
 import { PrismaService } from '../prisma/prisma.service';
 
-const AI_PROCESS = 'TheAuraLab:ai:process';
-const AI_RESPONSE = 'TheAuraLab:ai:response';
+const AI_PROCESS = 'auramind:ai:process';
+const AI_RESPONSE = 'auramind:ai:response';
 
 @WebSocketGateway({
   cors: { origin: '*', credentials: true },
