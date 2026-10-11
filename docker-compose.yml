@@ -15,7 +15,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-auramind}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-auramind_dev_pw}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:-auramind}
       POSTGRES_INITDB_ARGS: "--encoding=UTF8"
     volumes: [postgres-data:/var/lib/postgresql/data]
@@ -75,11 +75,11 @@ services:
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       PORT: "3000"
-      DATABASE_URL: postgresql://${POSTGRES_USER:-auramind}:${POSTGRES_PASSWORD:-auramind_dev_pw}@host.docker.internal:5432/${POSTGRES_DB:-auramind}
-      JWT_SECRET: ${SECRET_KEY:-change-me}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-auramind}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@host.docker.internal:5432/${POSTGRES_DB:-auramind}
+      JWT_SECRET: ${SECRET_KEY:?set SECRET_KEY in .env}
       REDIS_URL: redis://redis:6379
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-change-me-too}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-}
     networks:
       - backend
     depends_on:
@@ -106,8 +106,8 @@ services:
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       PORT: "3000"
-      DATABASE_URL: postgresql://${POSTGRES_USER:-auramind}:${POSTGRES_PASSWORD:-auramind_dev_pw}@host.docker.internal:5432/${POSTGRES_DB:-auramind}
-      JWT_SECRET: ${SECRET_KEY:-change-me}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-auramind}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@host.docker.internal:5432/${POSTGRES_DB:-auramind}
+      JWT_SECRET: ${SECRET_KEY:?set SECRET_KEY in .env}
       REDIS_URL: redis://redis:6379
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
     networks:
@@ -137,8 +137,8 @@ services:
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       PORT: "3000"
-      DATABASE_URL: postgresql://${POSTGRES_USER:-auramind}:${POSTGRES_PASSWORD:-auramind_dev_pw}@host.docker.internal:5432/${POSTGRES_DB:-auramind}
-      JWT_SECRET: ${SECRET_KEY:-change-me}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-auramind}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@host.docker.internal:5432/${POSTGRES_DB:-auramind}
+      JWT_SECRET: ${SECRET_KEY:?set SECRET_KEY in .env}
       REDIS_URL: redis://redis:6379
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
     networks:
@@ -168,8 +168,8 @@ services:
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       PORT: "3000"
-      DATABASE_URL: postgresql://${POSTGRES_USER:-auramind}:${POSTGRES_PASSWORD:-auramind_dev_pw}@host.docker.internal:5432/${POSTGRES_DB:-auramind}
-      JWT_SECRET: ${SECRET_KEY:-change-me}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-auramind}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@host.docker.internal:5432/${POSTGRES_DB:-auramind}
+      JWT_SECRET: ${SECRET_KEY:?set SECRET_KEY in .env}
       REDIS_URL: redis://redis:6379
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
     networks:
@@ -198,8 +198,8 @@ services:
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       PORT: "3000"
-      DATABASE_URL: postgresql://${POSTGRES_USER:-auramind}:${POSTGRES_PASSWORD:-auramind_dev_pw}@host.docker.internal:5432/${POSTGRES_DB:-auramind}
-      JWT_SECRET: ${SECRET_KEY:-change-me}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-auramind}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@host.docker.internal:5432/${POSTGRES_DB:-auramind}
+      JWT_SECRET: ${SECRET_KEY:?set SECRET_KEY in .env}
       REDIS_URL: redis://redis:6379
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
     networks:

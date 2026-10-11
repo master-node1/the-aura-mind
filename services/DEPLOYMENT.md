@@ -28,7 +28,8 @@
 - Docker & Docker Compose installed
 - `.env` file at repo root with:
   ```bash
-  SECRET_KEY=your-jwt-secret-here
+  SECRET_KEY=$(openssl rand -hex 32)
+  POSTGRES_PASSWORD=$(openssl rand -hex 24)
   OPENAI_API_KEY=sk-your-openai-key
   OPENAI_MODEL=gpt-4-turbo-preview
   ```
