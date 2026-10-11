@@ -35,10 +35,11 @@ export class MemoryService {
   }
 
   // ── Long-term (Postgres) ──────────────────────────────────────────────────
-  async create(userId: string, dto: CreateMemoryDto) {
+  async create(userId: string, tenantId: string, dto: CreateMemoryDto) {
     return this.prisma.memory.create({
       data: {
         userId,
+        tenantId,
         content: dto.content,
         summary: dto.summary,
         memoryType: dto.memoryType ?? 'long',

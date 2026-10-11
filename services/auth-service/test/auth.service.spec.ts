@@ -25,6 +25,7 @@ const user = (overrides: Partial<Record<string, unknown>> = {}) => ({
   username: 'jane',
   hashedPassword: passwordHash,
   isActive: true,
+  tenantId: 'default',
   ...overrides,
 });
 
@@ -63,6 +64,18 @@ describe('AuthService', () => {
       expect(data).not.toHaveProperty('id');
       expect(bcrypt.compareSync(PASSWORD, data.hashedPassword as string)).toBe(true);
       expect(result).not.toHaveProperty('hashedPassword');
+    });
+
+    it.each([
+      ['the configured TENANT_ID', { TENANT_ID: 'shop-1' }, 'shop-1'],
+      ['the default tenant when TENANT_ID is unset', {}, 'default'],
+      ['the default tenant when compose passes TENANT_ID empty', { TENANT_ID: '' }, 'default'],
+    ])('shouldStampNewUsersWith %s', async (_case, config, tenantId) => {
+      const { prisma, service } = setup(config);
+      prisma.user.findUnique.mockResolvedValue(null);
+      prisma.user.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ id: USER_ID, ...data }));
+      await service.register(dto);
+      expect(prisma.user.create.mock.calls[0][0].data.tenantId).toBe(tenantId);
     });
 
     it('shouldEmailAVerificationLinkAndStoreOnlyTheTokenHash', async () => {
@@ -141,8 +154,15 @@ describe('AuthService', () => {
 
       const tokens = await service.login(credentials);
 
-      expect(jwt.verify(tokens.access_token)).toMatchObject({ sub: USER_ID, type: 'access' });
+      expect(jwt.verify(tokens.access_token)).toMatchObject({ sub: USER_ID, tid: 'default', type: 'access' });
       expect(jwt.verify(tokens.refresh_token)).toMatchObject({ sub: USER_ID, type: 'refresh' });
+    });
+
+    it('shouldPutTheUsersOwnTenantInTheAccessToken', async () => {
+      const { prisma, jwt, service } = setup({ TENANT_ID: 'other' });
+      prisma.user.findUnique.mockResolvedValue(user({ tenantId: 'shop-1' }));
+      const tokens = await service.login(credentials);
+      expect(jwt.verify(tokens.access_token)).toMatchObject({ tid: 'shop-1' });
     });
 
     it.each([

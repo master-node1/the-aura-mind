@@ -7,12 +7,17 @@ export interface JwtPayload {
   sub: string;
   email: string;
   type: 'access' | 'refresh';
+  /** Tenant the user belongs to; absent on tokens issued before tenants existed. */
+  tid?: string;
 }
+
+export const DEFAULT_TENANT_ID = 'default';
 
 /** The user Passport attaches to the request after `validate` succeeds. */
 export interface AuthUser {
   sub: string;
   email: string;
+  tenantId: string;
 }
 
 export interface AuthenticatedRequest {
@@ -31,6 +36,6 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
   validate(payload: JwtPayload): AuthUser {
     if (payload.type !== 'access') throw new UnauthorizedException();
-    return { sub: payload.sub, email: payload.email };
+    return { sub: payload.sub, email: payload.email, tenantId: payload.tid ?? DEFAULT_TENANT_ID };
   }
 }

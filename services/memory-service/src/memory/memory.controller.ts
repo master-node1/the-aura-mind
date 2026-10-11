@@ -34,7 +34,7 @@ export class MemoryController {
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Create a new long-term memory' })
   create(@Request() req: AuthenticatedRequest, @Body() dto: CreateMemoryDto) {
-    return this.mem.create(req.user.sub, dto);
+    return this.mem.create(req.user.sub, req.user.tenantId, dto);
   }
 
   @Get('export/json')

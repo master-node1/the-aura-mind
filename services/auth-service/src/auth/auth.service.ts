@@ -17,6 +17,9 @@ import { MailService } from '../mail/mail.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 
+/** Tenant for deployments that don't set TENANT_ID; matches the column default. */
+export const DEFAULT_TENANT_ID = 'default';
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -45,6 +48,7 @@ export class AuthService {
           username: dto.username,
           hashedPassword,
           personalityArchetype: dto.personalityArchetype ?? 'friend',
+          tenantId: this.config.get<string>('TENANT_ID') || DEFAULT_TENANT_ID,
           ...verification.data,
         },
       });
@@ -94,7 +98,7 @@ export class AuthService {
     if (!user.isActive) throw new UnauthorizedException('Account is deactivated');
     if (this.verificationRequired() && !user.isVerified) throw new ForbiddenException('Email not verified');
 
-    return this.generateTokens(user.id, user.email);
+    return this.generateTokens(user);
   }
 
   async refresh(refreshToken: string) {
@@ -111,7 +115,7 @@ export class AuthService {
     if (!user || !user.isActive) throw new UnauthorizedException('Invalid refresh token');
     if (this.verificationRequired() && !user.isVerified) throw new ForbiddenException('Email not verified');
 
-    return this.generateTokens(user.id, user.email);
+    return this.generateTokens(user);
   }
 
   async getMe(userId: string) {
@@ -120,14 +124,14 @@ export class AuthService {
     return this.sanitizeUser(user);
   }
 
-  private generateTokens(userId: string, email: string) {
+  private generateTokens(user: User) {
     const secret = this.config.get<string>('JWT_SECRET', 'changeme');
     const accessToken = this.jwt.sign(
-      { sub: userId, email, type: 'access' },
+      { sub: user.id, email: user.email, tid: user.tenantId, type: 'access' },
       { secret, expiresIn: `${this.config.get('JWT_ACCESS_EXPIRE_MINUTES', 30)}m` },
     );
     const refreshToken = this.jwt.sign(
-      { sub: userId, type: 'refresh' },
+      { sub: user.id, type: 'refresh' },
       { secret, expiresIn: `${this.config.get('JWT_REFRESH_EXPIRE_DAYS', 7)}d` },
     );
     return { access_token: accessToken, refresh_token: refreshToken, token_type: 'bearer' };

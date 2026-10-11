@@ -74,6 +74,7 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: ${NODE_ENV:-production}
+      TENANT_ID: ${TENANT_ID:-}
       PORT: "3000"
       DATABASE_URL: postgresql://${POSTGRES_USER:-auramind}:${POSTGRES_PASSWORD}@host.docker.internal:5432/${POSTGRES_DB:-auramind}
       JWT_SECRET: ${SECRET_KEY:?}

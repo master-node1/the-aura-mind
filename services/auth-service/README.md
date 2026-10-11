@@ -77,7 +77,7 @@ src/
 | `AuthController` | Maps HTTP routes to `AuthService`. `GET /me` is protected by `AuthGuard('jwt')`. |
 | `AuthService` | `register`, `login`, `refresh`, `verifyEmail`, `resendVerification`, `getMe`, plus private helpers such as `generateTokens` and `sanitizeUser`. |
 | `MailService` | Sends the verification email through nodemailer when `SMTP_URL` is set; otherwise logs the link (non-production) or a warning (production). |
-| `JwtStrategy` | Pulls the Bearer token from the request, verifies it with `JWT_SECRET`, requires `payload.type === 'access'`, and returns `{ sub, email }` as `req.user`. |
+| `JwtStrategy` | Pulls the Bearer token from the request, verifies it with `JWT_SECRET`, requires `payload.type === 'access'`, and returns `{ sub, email }` as `req.user`. (chat-service and memory-service also read the `tid` claim as `req.user.tenantId`.) |
 | `PrismaService` | Shared Prisma client. |
 
 ### 3.2 DTOs and validation
@@ -103,7 +103,7 @@ The global `ValidationPipe({ whitelist: true, transform: true })` strips propert
 
    | Token | Payload | Expiry |
    |---|---|---|
-   | access | `{ sub, email, type: 'access' }` | `JWT_ACCESS_EXPIRE_MINUTES`, default 30 minutes |
+   | access | `{ sub, email, tid, type: 'access' }` (`tid` is the user's `tenant_id`) | `JWT_ACCESS_EXPIRE_MINUTES`, default 30 minutes |
    | refresh | `{ sub, type: 'refresh' }` | `JWT_REFRESH_EXPIRE_DAYS`, default 7 days |
 
    Both tokens are signed with `JWT_SECRET` using HS256, the `@nestjs/jwt` default.
@@ -181,6 +181,7 @@ Content-Type: application/json
 | `avatar_config` | JSONB | NOT NULL, default `'{}'` | Updated by companion-service |
 | `communication_style` | TEXT | NOT NULL, default `'casual'` | Updated by companion-service |
 | `is_active` | BOOLEAN | NOT NULL, default `true` | Inactive users can't log in |
+| `tenant_id` | TEXT | NOT NULL, default `'default'`, indexed | Host product the account belongs to; set from `TENANT_ID` at signup and issued as the `tid` claim. Added by `20261011190000_users_tenant_id` |
 | `is_verified` | BOOLEAN | NOT NULL, default `false` | Set by `POST /verify-email` |
 | `email_verification_token_hash` | TEXT | UNIQUE, nullable | SHA-256 of the pending link token; the raw token is only emailed. Cleared on verification |
 | `email_verification_expires_at` | TIMESTAMP(3) | nullable | Link expiry (`EMAIL_VERIFICATION_TTL_HOURS`) |
@@ -269,6 +270,7 @@ sequenceDiagram
 | `DATABASE_URL` | yes | – | Postgres connection string |
 | `JWT_SECRET` | yes | `changeme` (fallback in code; never use it outside local development) | HS256 signing secret, shared with the other AuraMind services (never with theauralab). Compose maps it from `SECRET_KEY`. |
 | `JWT_ACCESS_EXPIRE_MINUTES` | no | `30` | Access token lifetime |
+| `TENANT_ID` | no | `default` | Tenant stamped on new accounts. One auth deployment serves one tenant for now |
 | `JWT_REFRESH_EXPIRE_DAYS` | no | `7` | Refresh token lifetime |
 | `CORS_ORIGINS` | no | `http://localhost:3000` | Comma-separated list of allowed origins |
 | `NODE_ENV` | no | – | `production` hides Swagger and stops verification links from being logged |
@@ -295,7 +297,7 @@ npm run build && npm start       # production build
 
 With Docker: `docker compose up -d --build auth-service`.
 
-**Tests:** `npm test` runs 31 Jest unit tests in `test/`, which are kept out of `src/` so production builds don't include them. They cover signup (hashing, 409 on duplicates and races), login (unknown email and wrong password give the same 401, deactivated accounts), refresh validation, email verification (token hashing, expiry, resend without account enumeration, the `REQUIRE_EMAIL_VERIFICATION` switch) and `/me`.
+**Tests:** `npm test` runs 35 Jest unit tests in `test/`, which are kept out of `src/` so production builds don't include them. They cover signup (hashing, 409 on duplicates and races), login (unknown email and wrong password give the same 401, deactivated accounts), refresh validation, email verification (token hashing, expiry, resend without account enumeration, the `REQUIRE_EMAIL_VERIFICATION` switch), tenant stamping and the `tid` claim, and `/me`.
 
 Lint runs from the repository root with `npm run lint`.
 

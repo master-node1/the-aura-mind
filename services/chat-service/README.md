@@ -136,6 +136,7 @@ erDiagram
     conversations {
         uuid id PK
         uuid user_id
+        text tenant_id
         text title
         text summary
         int message_count
@@ -155,14 +156,14 @@ erDiagram
     }
 ```
 
-Created by migration `20260722125020_init`.
+Created by migration `20260722125020_init`; `20261011190100_conversations_tenant_id` adds `tenant_id`.
 
 | Table | Column notes |
 |---|---|
-| `conversations` | `title` is set to the first 60 characters of the first message when the conversation is created from the socket. `summary`, `message_count` and `is_archived` are **never updated** by the code. |
+| `conversations` | `tenant_id` (TEXT, default `'default'`, indexed) is copied from the access token's `tid` claim when a conversation is created, over REST or the socket; tokens without `tid` count as `default`. `title` is set to the first 60 characters of the first message when the conversation is created from the socket. `summary`, `message_count` and `is_archived` are **never updated** by the code. |
 | `messages` | `role` is `user` or `assistant`; only `user` rows are written today. `emotion`, `emotion_confidence` and `token_count` are never filled in. |
 
-There are no secondary indexes. Listing by `(user_id, updated_at)` and paging by `(conversation_id, created_at)` will need indexes as data grows.
+Apart from `tenant_id`, there are no secondary indexes. Listing by `(user_id, updated_at)` and paging by `(conversation_id, created_at)` will need indexes as data grows.
 
 ---
 

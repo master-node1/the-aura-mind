@@ -121,12 +121,13 @@ Content-Type: application/json
 
 ## 5. Data model
 
-**Table `memories`**: migration `20260722123353_init` creates it, and `20260722125119_init` converts `user_id`, `embedding_id` and `conversation_id` to UUID.
+**Table `memories`**: migration `20260722123353_init` creates it, and `20260722125119_init` converts `user_id`, `embedding_id` and `conversation_id` to UUID. `20261011190200_memories_tenant_id` adds `tenant_id`.
 
 | Column | Type | Constraints / default | Notes |
 |---|---|---|---|
 | `id` | UUID | PK | |
 | `user_id` | UUID | NOT NULL | Logical link to `users.id` |
+| `tenant_id` | TEXT | NOT NULL, default `'default'`, indexed | From the access token's `tid` claim on `POST /`; tokens without `tid` count as `default` |
 | `memory_type` | TEXT | default `'long'` | `short \| long \| semantic` |
 | `content` | TEXT | NOT NULL | |
 | `summary` | TEXT | nullable | |
@@ -144,6 +145,7 @@ erDiagram
     memories {
         uuid id PK
         uuid user_id
+        text tenant_id
         text memory_type
         text content
         text summary
