@@ -8,9 +8,9 @@
 | **Stack** | Python 3.11, FastAPI, uvicorn, redis-py (asyncio), LangChain + OpenAI, ChromaDB client |
 | **Port** | `3000` (exposes only `GET /health`) |
 | **Gateway route** | `/api/ai/health` → `/health` |
-| **Inputs** | Redis channel `TheAuraLab:ai:process` |
-| **Outputs** | Redis channel `TheAuraLab:ai:response` |
-| **State** | Redis key `TheAuraLab:st:{userId}` (short-term memory, shared with memory-service); ChromaDB collection `TheAuraLab_memories` |
+| **Inputs** | Redis channel `auramind:ai:process` |
+| **Outputs** | Redis channel `auramind:ai:response` |
+| **State** | Redis key `auramind:st:{userId}` (short-term memory, shared with memory-service); ChromaDB collection `auramind_memories` |
 | **External** | OpenAI API (`OPENAI_MODEL` for chat and extraction; `gpt-3.5-turbo` for emotion detection) |
 | **Database** | none. This service doesn't touch Postgres. |
 
@@ -18,12 +18,12 @@
 
 ## 1. Responsibilities
 
-- Listen on `TheAuraLab:ai:process` for user messages that chat-service publishes.
+- Listen on `auramind:ai:process` for user messages that chat-service publishes.
 - Build context from short-term history in Redis, semantically relevant memories in ChromaDB, the detected emotion and an empathy hint.
 - Generate a personality-aware reply with the LLM, or hand off to the creative or research agents.
 - Attach wellness suggestions when the user seems distressed.
 - Extract important facts from the exchange and store them as vector memories in ChromaDB.
-- Publish the reply to `TheAuraLab:ai:response` for chat-service to deliver.
+- Publish the reply to `auramind:ai:response` for chat-service to deliver.
 - On any pipeline failure, publish a friendly fallback reply instead of nothing.
 
 ---
@@ -41,9 +41,9 @@ flowchart LR
     LLM --> OAI[(OpenAI API)]
     EMO --> OAI
     P --> MEM[MemoryService]
-    MEM -- "LRANGE / RPUSH TheAuraLab:st:userId" --> R
+    MEM -- "LRANGE / RPUSH auramind:st:userId" --> R
     MEM --> VS[VectorStoreService]
-    VS -- HTTP --> CH[(ChromaDB<br/>TheAuraLab_memories)]
+    VS -- HTTP --> CH[(ChromaDB<br/>auramind_memories)]
     P -- result --> W
     W -- "PUBLISH ai:response" --> R
     R --> CS
@@ -82,7 +82,7 @@ ai-service/
 
 | # | Step | Component | Details |
 |---|---|---|---|
-| 1 | Load history | `MemoryService.get_short_term` | `LRANGE TheAuraLab:st:{userId}` |
+| 1 | Load history | `MemoryService.get_short_term` | `LRANGE auramind:st:{userId}` |
 | 2 | Detect emotion | `EmotionAgent.analyze` → `EmotionService.detect` | `gpt-3.5-turbo`, temperature 0.1, JSON output. Falls back to `neutral` with confidence 0.5. |
 | 3 | Retrieve memories | `MemoryService.retrieve_relevant` → `VectorStoreService.search_memories` | Top 5 by cosine distance, filtered by `user_id`, formatted as `- [emotion] text` |
 | 4 | Empathy hint | `EmotionAgent.get_empathy_hint` | Appended to the memories as `Empathy note: …` |
@@ -131,14 +131,14 @@ The companion is called **Sora**. The archetypes are `friend` (the default and t
 |---|---|---|
 | GET | `/health` | 200 `{ "status": "ok", "service": "ai-service", "checks": { "redis": "up", "chromadb": "up" } }`, or 503 with `"status": "error"` and the failed check marked `down`. Redis is checked with `PING` and ChromaDB with `heartbeat` (run in a worker thread), each with a 2-second timeout. OpenAI isn't checked. |
 
-### Redis input: `TheAuraLab:ai:process`
+### Redis input: `auramind:ai:process`
 
 ```json
 { "userId": "uuid", "messageId": "client-msg-id", "content": "I'm so stressed about exams",
   "conversationId": "uuid", "username": "jane_d", "personality": "friend" }
 ```
 
-### Redis output: `TheAuraLab:ai:response`
+### Redis output: `auramind:ai:response`
 
 ```json
 {
@@ -161,7 +161,7 @@ The companion is called **Sora**. The archetypes are `friend` (the default and t
 
 The service has no relational tables.
 
-**ChromaDB collection `TheAuraLab_memories`** (`hnsw:space = cosine`)
+**ChromaDB collection `auramind_memories`** (`hnsw:space = cosine`)
 
 | Field | Value |
 |---|---|
@@ -176,9 +176,9 @@ The service has no relational tables.
 
 | Key or channel | Type | Usage |
 |---|---|---|
-| `TheAuraLab:st:{userId}` | LIST of JSON `{role, content}` | Read and write; at most 50 entries; TTL `SHORT_TERM_MEMORY_TTL` |
-| `TheAuraLab:ai:process` | pub/sub | Subscribe |
-| `TheAuraLab:ai:response` | pub/sub | Publish |
+| `auramind:st:{userId}` | LIST of JSON `{role, content}` | Read and write; at most 50 entries; TTL `SHORT_TERM_MEMORY_TTL` |
+| `auramind:ai:process` | pub/sub | Subscribe |
+| `auramind:ai:response` | pub/sub | Publish |
 
 ---
 
@@ -241,8 +241,8 @@ export OPENAI_API_KEY=… REDIS_URL=redis://localhost:6379 CHROMA_HOST=localhost
 uvicorn main:app --port 3000
 
 # simulate chat-service
-redis-cli SUBSCRIBE TheAuraLab:ai:response &
-redis-cli PUBLISH TheAuraLab:ai:process '{"userId":"u1","messageId":"m1","content":"hi","username":"jane","personality":"friend"}'
+redis-cli SUBSCRIBE auramind:ai:response &
+redis-cli PUBLISH auramind:ai:process '{"userId":"u1","messageId":"m1","content":"hi","username":"jane","personality":"friend"}'
 ```
 
 The Docker image is multi-stage, runs as the non-root `app` user and has a built-in `HEALTHCHECK`.

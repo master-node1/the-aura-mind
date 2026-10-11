@@ -11,7 +11,7 @@ async function bootstrap() {
 
   if (process.env.NODE_ENV !== 'production') {
     const config = new DocumentBuilder()
-      .setTitle('TheAuraLab — Memory Service')
+      .setTitle('AuraMind — Memory Service')
       .setDescription('Long-term memory (Postgres), short-term memory (Redis), and semantic search (ChromaDB).')
       .setVersion('1.0')
       .addBearerAuth()

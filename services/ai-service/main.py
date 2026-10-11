@@ -1,7 +1,7 @@
 """
 AI Service — Redis consumer worker + optional HTTP health endpoint.
-Subscribes to TheAuraLab:ai:process, runs the agent pipeline,
-publishes response to TheAuraLab:ai:response.
+Subscribes to auramind:ai:process, runs the agent pipeline,
+publishes response to auramind:ai:response.
 """
 import asyncio
 import json
@@ -22,8 +22,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-AI_PROCESS_CHANNEL = "TheAuraLab:ai:process"
-AI_RESPONSE_CHANNEL = "TheAuraLab:ai:response"
+AI_PROCESS_CHANNEL = "auramind:ai:process"
+AI_RESPONSE_CHANNEL = "auramind:ai:response"
 HEALTH_CHECK_TIMEOUT_SECONDS = 2.0
 
 _health_redis = aioredis.from_url(settings.redis_url, decode_responses=True)
@@ -61,7 +61,7 @@ async def lifespan(app: FastAPI):
     task.cancel()
 
 
-app = FastAPI(title="TheAuraLab AI Service", lifespan=lifespan)
+app = FastAPI(title="AuraMind AI Service", lifespan=lifespan)
 
 
 async def _probe(name: str, check) -> str:

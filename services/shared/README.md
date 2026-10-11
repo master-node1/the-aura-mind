@@ -1,4 +1,4 @@
-# shared (`@TheAuraLab/shared`)
+# shared (`@auramind/shared`)
 
 > TypeScript types and Redis constants shared across services: the intended single source of truth for cross-service contracts.
 > [← Service index](../README.md)
@@ -29,12 +29,12 @@ src/
 
 ```ts
 REDIS_CHANNELS = {
-  AI_PROCESS:    'TheAuraLab:ai:process',   // chat-service → ai-service   (in use)
-  AI_RESPONSE:   'TheAuraLab:ai:response',  // ai-service   → chat-service (in use)
-  MEMORY_SAVE:   'TheAuraLab:memory:save',  // declared, unused
-  MEMORY_SEARCH: 'TheAuraLab:memory:search' // declared, unused
+  AI_PROCESS:    'auramind:ai:process',   // chat-service → ai-service   (in use)
+  AI_RESPONSE:   'auramind:ai:response',  // ai-service   → chat-service (in use)
+  MEMORY_SAVE:   'auramind:memory:save',  // declared, unused
+  MEMORY_SEARCH: 'auramind:memory:search' // declared, unused
 }
-REDIS_KEYS.shortTerm(userId) = `TheAuraLab:st:${userId}` // memory-service + ai-service
+REDIS_KEYS.shortTerm(userId) = `auramind:st:${userId}` // memory-service + ai-service
 ```
 
 ### Domain enums

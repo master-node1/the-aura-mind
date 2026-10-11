@@ -14,7 +14,7 @@ async function bootstrap() {
 
   if (process.env.NODE_ENV !== 'production') {
     const config = new DocumentBuilder()
-      .setTitle('TheAuraLab — Chat Service')
+      .setTitle('AuraMind — Chat Service')
       .setDescription('Manages conversations, messages, and the Socket.IO real-time WebSocket gateway.')
       .setVersion('1.0')
       .addBearerAuth()
