@@ -78,6 +78,10 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-auramind}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@host.docker.internal:5432/${POSTGRES_DB:-auramind}
       JWT_SECRET: ${SECRET_KEY:?set SECRET_KEY in .env}
       REDIS_URL: redis://redis:6379
+      SMTP_URL: ${SMTP_URL:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      EMAIL_VERIFICATION_URL: ${EMAIL_VERIFICATION_URL:-}
+      REQUIRE_EMAIL_VERIFICATION: ${REQUIRE_EMAIL_VERIFICATION:-false}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-}
     networks:
