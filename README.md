@@ -69,7 +69,7 @@ Each README covers HLD, LLD, API, DB schema, flows, configuration and limitation
 ## Quick start
 
 ```sh
-cp .env.example .env          # then set SECRET_KEY and OPENAI_API_KEY
+cp .env.example .env          # then set SECRET_KEY, POSTGRES_PASSWORD and OPENAI_API_KEY
 docker compose up -d --build
 curl http://localhost:8001/health
 

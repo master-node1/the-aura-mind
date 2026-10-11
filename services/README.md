@@ -213,7 +213,7 @@ flowchart LR
 
 ## Configuration
 
-Copy `.env.example` to `.env` at the repository root. docker-compose maps these root variables into each service:
+Copy `.env.example` to `.env` at the repository root. `SECRET_KEY` and `POSTGRES_PASSWORD` have no defaults: compose refuses to start until both are set. docker-compose maps these root variables into each service:
 
 | Root variable | Becomes | Used by |
 |---|---|---|
@@ -244,7 +244,7 @@ npx prisma migrate deploy        # auth, chat, memory
 # Never run `prisma db push` against the shared database: each service's schema
 # only knows its own tables, so Prisma would offer to drop everyone else's.
 # (companion and analytics use other services' tables: generate only)
-DATABASE_URL=postgresql://auramind:auramind_dev_pw@localhost:5432/auramind \
+DATABASE_URL=postgresql://auramind:$POSTGRES_PASSWORD@localhost:5432/auramind \
 JWT_SECRET=dev-secret PORT=3000 npm run start:dev
 
 # 3. ai-service
