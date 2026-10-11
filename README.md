@@ -2,6 +2,8 @@
 
 **AuraMind** (formerly Sora) is an AI chat agent built to plug into any product. Today it is an emotionally aware companion with real-time chat, long-term memory and selectable personalities; the roadmap turns it into customer order-support chat, call emotion analysis and admin help for host products such as theauralab and theauracoach, integrated through APIs and adapters rather than shared databases.
 
+The goal: AI that chats and analyses calls, chats and videos, shares users' experience with the product with admins, and integrates with any public-facing service such as e-commerce or OTT.
+
 It was split out of [master-node1/the-aura-lab](https://github.com/master-node1/the-aura-lab) with its full history. It has its own login, database and signing secret.
 
 | | |
